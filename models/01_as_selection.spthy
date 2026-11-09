@@ -1,0 +1,100 @@
+theory MCP_AS_Selection
+begin
+
+/*
+ * Model 01: which authorization server receives the client's credentials?
+ *
+ * Context
+ *   In MCP, the server a client connects to tells the client which
+ *   authorization server (AS) to use, via its Protected Resource Metadata
+ *   (RFC 9728). That MCP server may be malicious.
+ *
+ *   MCP Python SDK advisory GHSA-qx49-fqc8-xw99 (CVE-2026-115563,
+ *   28 Sep 2026) describes the class of bug this model abstracts:
+ *   "stored or pre-provisioned client credentials were not bound to the
+ *   authorization server they belong to", so a malicious MCP server could
+ *   name its own AS and receive credentials meant for the real one.
+ *
+ * Abstraction (deliberately small; see docs/threat-model.md)
+ *   - A client credential (client_secret, code_verifier, signed assertion...)
+ *     is a single fresh secret bound at registration time to one AS.
+ *   - The network, including all metadata, is controlled by the attacker
+ *     (Dolev-Yao). The attacker can also run its own AS.
+ *   - Requests to an honest AS travel over TLS: modelled as a private
+ *     channel fact ToAS(...). A dishonest AS simply leaks what it receives.
+ *
+ * Variants (Tamarin preprocessor flag)
+ *   tamarin-prover --prove models/01_as_selection.spthy -D=VULNERABLE
+ *       client sends a stored credential to whatever AS the metadata names
+ *       expected: client_credential_secrecy FALSIFIED
+ *   tamarin-prover --prove models/01_as_selection.spthy
+ *       client only sends a credential to the AS it was registered with
+ *       expected: client_credential_secrecy VERIFIED
+ */
+
+// The client registers with an authorization server and obtains a credential
+// bound to that AS.
+rule Register_Client:
+    [ Fr(~cred) ]
+  --[ Registered($C, $AS, ~cred) ]->
+    [ !ClientCred($C, $AS, ~cred) ]
+
+// The attacker may control any authorization server, e.g. one it set up itself.
+rule Compromise_AS:
+    [ ]
+  --[ Compromised($X) ]->
+    [ !Dishonest($X) ]
+
+#ifdef VULNERABLE
+
+// VULNERABLE: the client trusts the AS named in the (attacker-controlled)
+// protected resource metadata, and sends a credential registered elsewhere.
+rule Client_Token_Request_Unbound:
+    [ !ClientCred($C, $ASreg, cred)
+    , In(<'prm', $RS, $ASnamed>)
+    ]
+  --[ CredentialSent($C, $ASnamed, cred) ]->
+    [ ToAS($ASnamed, <'token_request', $C, cred>) ]
+
+#else
+
+// FIXED: the credential is bound to its AS. The client only uses it when the
+// metadata names that same AS (issuer + credential binding).
+rule Client_Token_Request_Bound:
+    [ !ClientCred($C, $AS, cred)
+    , In(<'prm', $RS, $AS>)
+    ]
+  --[ CredentialSent($C, $AS, cred) ]->
+    [ ToAS($AS, <'token_request', $C, cred>) ]
+
+#endif
+
+// An honest AS accepts a request carrying a credential it issued.
+rule AS_Accepts:
+    [ ToAS($AS, <'token_request', $C, cred>)
+    , !ClientCred($C, $AS, cred)
+    ]
+  --[ TokenIssued($C, $AS) ]->
+    [ ]
+
+// A dishonest AS hands whatever it receives to the attacker.
+rule Dishonest_AS_Leaks:
+    [ ToAS($X, m), !Dishonest($X) ]
+  --[ Leaked($X) ]->
+    [ Out(m) ]
+
+// Sanity check: an honest run (no compromise at all) can complete.
+lemma executable:
+  exists-trace
+  "Ex C A #i. TokenIssued(C, A) @ #i
+     & not (Ex X #k. Compromised(X) @ #k)"
+
+// Security property: a client credential stays secret unless the very AS it
+// was registered with is compromised.
+lemma client_credential_secrecy:
+  "All C A cred #i.
+     Registered(C, A, cred) @ #i
+     ==> ( not (Ex #j. K(cred) @ #j) )
+       | ( Ex #k. Compromised(A) @ #k )"
+
+end

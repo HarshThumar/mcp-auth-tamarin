@@ -1,0 +1,6 @@
+results/
+*.spthy.out
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
