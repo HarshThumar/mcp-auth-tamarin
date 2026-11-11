@@ -34,4 +34,5 @@ Each model should **rediscover a known, already-fixed issue** when the fix is re
 - A malicious MCP server can name any AS in its metadata, including the honest one or an attacker-run one whose metadata it controls (`authorization_response_iss_parameter_supported` true or false).
 - Some honest user approves any authorization request for an honest client (the usual mix-up assumption: the user is already signed in at the honest AS). Clients are honest public clients with no secret, as with CIMD, so the same `client_id` and redirect URI are used at every AS.
 - Authorization requests travel in the front channel and are public. The attacker can send any callback to the client's redirect URI.
+- Codes and access tokens are wrapped in constructors with no destructor (`cd(...)`, `at(...)`), and two `[sources]` lemmas say where the client's codes and tokens come from. Both are needed for termination; they do not remove any attacker capability, because the attacker can still build `cd(x)` / `at(x)` from anything it knows.
 - Not modelled yet: code single-use, refresh tokens, scopes / step-up, DPoP.

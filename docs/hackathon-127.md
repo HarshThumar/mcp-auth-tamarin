@@ -4,9 +4,9 @@ Wiki: https://wiki.ietf.org/en/meeting/127/hackathon · Champion: Harsh Thumar (
 
 ## Goals for the weekend
 
-1. Model 01 runs in CI. The `VULNERABLE` variant finds the attack, and the fixed variant verifies.
-2. Model 02 drafted: discovery + PKCE + RFC 8707 audience + RFC 9207 `iss`.
-3. A written list of every assumption the MCP spec leaves open.
+1. ✅ Model 01 runs in CI. The `VULNERABLE` variant finds the attack, and the fixed variant verifies.
+2. ✅ Model 02 (done early, 11 Nov): discovery + PKCE + RFC 8707 audience + RFC 9207 `iss`. Attacks found in `NO_AUD`, `NO_ISS` and `ISS_OPTIONAL`; the fixed variant verifies. See [results.md](results.md).
+3. ✅ First version of the list: [spec-gaps.md](spec-gaps.md). During the weekend: model one of its open items (G4 AS ignores `resource`, G7 no `state`, or code single-use).
 4. A short written results summary posted to the wiki or hackathon channel.
 
 ## Hours (IST)

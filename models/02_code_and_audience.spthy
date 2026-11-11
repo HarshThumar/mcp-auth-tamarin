@@ -3,6 +3,11 @@ begin
 
 builtins: hashing
 
+// Codes and access tokens are tagged so that Tamarin never confuses them
+// with PKCE verifiers or other fresh values. No destructors: the attacker
+// cannot unwrap them, but can build cd(x) / at(x) from values it knows.
+functions: cd/1, at/1
+
 /*
  * Model 02: does an authorization code / access token only reach the
  * authorization server (AS) and MCP server (RS) it was meant for?
@@ -68,7 +73,7 @@ builtins: hashing
 // Honest AS that always sends `iss` and advertises it in its metadata.
 rule Setup_Honest_AS_Iss:
     [ ]
-  --[ ASSetup($AS), HonestAS($AS) ]->
+  --[ ASSetup($AS), AS_Honest($AS) ]->
     [ !HonestAS($AS), !ASMeta($AS, 'true') ]
 
 #ifdef ISS_OPTIONAL
@@ -76,31 +81,31 @@ rule Setup_Honest_AS_Iss:
 // and does not advertise it.
 rule Setup_Honest_AS_NoIss:
     [ ]
-  --[ ASSetup($AS), HonestAS($AS) ]->
+  --[ ASSetup($AS), AS_Honest($AS) ]->
     [ !HonestAS($AS), !ASMeta($AS, 'false') ]
 #endif
 
 // Attacker-run AS. The attacker chooses what its metadata advertises.
 rule Setup_Dishonest_AS_Iss:
     [ ]
-  --[ ASSetup($X), DishonestAS($X) ]->
+  --[ ASSetup($X), AS_Dishonest($X) ]->
     [ !DishonestAS($X), !ASMeta($X, 'true') ]
 
 rule Setup_Dishonest_AS_NoIss:
     [ ]
-  --[ ASSetup($X), DishonestAS($X) ]->
+  --[ ASSetup($X), AS_Dishonest($X) ]->
     [ !DishonestAS($X), !ASMeta($X, 'false') ]
 
 // Honest MCP server; its protected resource metadata names an honest AS.
 rule Setup_Honest_RS:
     [ !HonestAS($AS) ]
-  --[ RSSetup($RS), HonestRS($RS) ]->
+  --[ RSSetup($RS), RS_Honest($RS) ]->
     [ !HonestRS($RS), !PRM($RS, $AS) ]
 
 // Attacker-run (malicious) MCP server.
 rule Setup_Dishonest_RS:
     [ ]
-  --[ RSSetup($X), DishonestRS($X) ]->
+  --[ RSSetup($X), RS_Dishonest($X) ]->
     [ !DishonestRS($X) ]
 
 restriction as_set_up_once:
@@ -138,28 +143,28 @@ rule Client_Start_Dishonest_RS:
 rule AS_Authorize_Iss:
     [ In(<'authz_request', $AS, $C, challenge, $RS, state>)
     , !HonestAS($AS), !ASMeta($AS, 'true'), Fr(~code) ]
-  --[ Consent($U, $C, $RS, $AS) ]->
-    [ !Code($AS, ~code, $U, $C, challenge, $RS)
-    , ToClient($C, <'authz_response', ~code, state, $AS>) ]
+  --[ Consent($U, $C, $RS, $AS), CodeIssued(cd(~code)) ]->
+    [ !Code($AS, cd(~code), $U, $C, challenge, $RS)
+    , ToClient($C, <'authz_response', cd(~code), state, $AS>) ]
 
 rule AS_Authorize_NoIss:
     [ In(<'authz_request', $AS, $C, challenge, $RS, state>)
     , !HonestAS($AS), !ASMeta($AS, 'false'), Fr(~code) ]
-  --[ Consent($U, $C, $RS, $AS) ]->
-    [ !Code($AS, ~code, $U, $C, challenge, $RS)
-    , ToClient($C, <'authz_response_noiss', ~code, state>) ]
+  --[ Consent($U, $C, $RS, $AS), CodeIssued(cd(~code)) ]->
+    [ !Code($AS, cd(~code), $U, $C, challenge, $RS)
+    , ToClient($C, <'authz_response_noiss', cd(~code), state>) ]
 
 // The attacker can also send any callback to the client's redirect URI
 // (e.g. what its own AS "returns").
 rule Attacker_Callback_Iss:
-    [ In(<'authz_response', ~code, ~state, $iss>) ]
+    [ In(<'authz_response', cd(code), ~state, $iss>) ]
   -->
-    [ ToClient($C, <'authz_response', ~code, ~state, $iss>) ]
+    [ ToClient($C, <'authz_response', cd(code), ~state, $iss>) ]
 
 rule Attacker_Callback_NoIss:
-    [ In(<'authz_response_noiss', ~code, ~state>) ]
+    [ In(<'authz_response_noiss', cd(code), ~state>) ]
   -->
-    [ ToClient($C, <'authz_response_noiss', ~code, ~state>) ]
+    [ ToClient($C, <'authz_response_noiss', cd(code), ~state>) ]
 
 /* ------------------------------------------------------------------ */
 /* Client: callback, `iss` check (RFC 9207 §2.4), token request       */
@@ -170,20 +175,20 @@ rule Attacker_Callback_NoIss:
 // NO_ISS: whatever `iss` says, the code goes to the AS this session started with.
 rule Client_Callback_Iss:
     [ St_Client_1(~sid, $C, $RS, $AS, issSupported, ~ver, ~state)
-    , ToClient($C, <'authz_response', ~code, ~state, $iss>) ]
-  --[ ClientRedeems(~sid, $C, $AS, ~code) ]->
+    , ToClient($C, <'authz_response', cd(code), ~state, $iss>) ]
+  --[ ClientRedeems(~sid, $C, $AS, cd(code)) ]->
     [ St_Client_2(~sid, $C, $RS, $AS)
-    , ToAS($AS, ~sid, <'token_request', $C, ~code, ~ver, $RS>) ]
+    , ToAS($AS, ~sid, <'token_request', $C, cd(code), ~ver, $RS>) ]
 
 #else
 
 // `iss` present: compare with the recorded issuer (rows 1 and 3 of the table).
 rule Client_Callback_Iss:
     [ St_Client_1(~sid, $C, $RS, $AS, issSupported, ~ver, ~state)
-    , ToClient($C, <'authz_response', ~code, ~state, $AS>) ]
-  --[ ClientRedeems(~sid, $C, $AS, ~code) ]->
+    , ToClient($C, <'authz_response', cd(code), ~state, $AS>) ]
+  --[ ClientRedeems(~sid, $C, $AS, cd(code)) ]->
     [ St_Client_2(~sid, $C, $RS, $AS)
-    , ToAS($AS, ~sid, <'token_request', $C, ~code, ~ver, $RS>) ]
+    , ToAS($AS, ~sid, <'token_request', $C, cd(code), ~ver, $RS>) ]
 
 #endif
 
@@ -191,45 +196,46 @@ rule Client_Callback_Iss:
 // `iss` support (row 4). Row 2 (advertised but absent) has no rule: reject.
 rule Client_Callback_NoIss:
     [ St_Client_1(~sid, $C, $RS, $AS, 'false', ~ver, ~state)
-    , ToClient($C, <'authz_response_noiss', ~code, ~state>) ]
-  --[ ClientRedeems(~sid, $C, $AS, ~code) ]->
+    , ToClient($C, <'authz_response_noiss', cd(code), ~state>) ]
+  --[ ClientRedeems(~sid, $C, $AS, cd(code)) ]->
     [ St_Client_2(~sid, $C, $RS, $AS)
-    , ToAS($AS, ~sid, <'token_request', $C, ~code, ~ver, $RS>) ]
+    , ToAS($AS, ~sid, <'token_request', $C, cd(code), ~ver, $RS>) ]
 
 /* ------------------------------------------------------------------ */
 /* Honest AS: token endpoint (PKCE + resource must match the code)    */
 /* ------------------------------------------------------------------ */
 
+// Token request from an honest client, over its own TLS connection ~sid.
 rule AS_Token:
-    [ ToAS($AS, cid, <'token_request', $C, ~code, ~ver, $RS>)
+    [ ToAS($AS, ~sid, <'token_request', $C, cd(~code), ~ver, $RS>)
     , !HonestAS($AS)
-    , !Code($AS, ~code, $U, $C, h(~ver), $RS)
+    , !Code($AS, cd(~code), $U, $C, h(~ver), $RS)
     , Fr(~tok) ]
-  --[ TokenIssued(~tok, $AS, $U, $RS) ]->
-    [ !Token(~tok, $AS, $U, $RS)
-    , FromAS(cid, <'token_response', ~tok>) ]
+  --[ TokenIssued(at(~tok), $AS, $U, $RS) ]->
+    [ !Token(at(~tok), $AS, $U, $RS)
+    , FromAS(~sid, <'token_response', at(~tok)>) ]
 
-// The attacker is a TLS client of every honest AS too (public clients).
-rule Attacker_To_AS:
-    [ In(<'token_request', $C, ~code, ~ver, $RS>), !HonestAS($AS) ]
-  -->
-    [ ToAS($AS, 'attacker', <'token_request', $C, ~code, ~ver, $RS>) ]
-
-rule Attacker_From_AS:
-    [ FromAS('attacker', <'token_response', ~tok>) ]
-  -->
-    [ Out(~tok) ]
+// The same endpoint used by the attacker as an ordinary public client:
+// the request comes from the network and the token goes back to it.
+rule AS_Token_From_Network:
+    [ In(<'token_request', $C, cd(~code), ver, $RS>)
+    , !HonestAS($AS)
+    , !Code($AS, cd(~code), $U, $C, h(ver), $RS)
+    , Fr(~tok) ]
+  --[ TokenIssued(at(~tok), $AS, $U, $RS) ]->
+    [ !Token(at(~tok), $AS, $U, $RS)
+    , Out(at(~tok)) ]
 
 // An attacker-run AS leaks every request and can answer on that connection.
 rule Dishonest_AS_Leaks:
-    [ ToAS($X, cid, m), !DishonestAS($X) ]
+    [ ToAS($X, ~sid, m), !DishonestAS($X) ]
   --[ LeakedToAS($X) ]->
-    [ Out(<cid, m>) ]
+    [ Out(<~sid, m>) ]
 
 rule Dishonest_AS_Answers:
-    [ In(<cid, 'token_response', ~tok>) ]
+    [ In(<~cid, 'token_response', at(tok)>) ]
   -->
-    [ FromAS(cid, <'token_response', ~tok>) ]
+    [ FromAS(~cid, <'token_response', at(tok)>) ]
 
 /* ------------------------------------------------------------------ */
 /* Client uses the token; MCP server validates it                     */
@@ -237,32 +243,33 @@ rule Dishonest_AS_Answers:
 
 rule Client_Use_Token:
     [ St_Client_2(~sid, $C, $RS, $AS)
-    , FromAS(~sid, <'token_response', ~tok>) ]
-  --[ ClientUsesToken(~sid, $C, $RS, ~tok) ]->
-    [ ToRS($RS, <'bearer', ~tok>) ]
+    , FromAS(~sid, <'token_response', at(tok)>) ]
+  --[ ClientUsesToken(~sid, $C, $RS, at(tok)) ]->
+    [ ToRS($RS, <'bearer', at(tok)>) ]
 
-// The attacker can present any token it holds to any MCP server.
+// The attacker can present any token it holds to any honest MCP server.
+// (Sending to its own dishonest server teaches it nothing new.)
 rule Attacker_To_RS:
-    [ In(<'bearer', ~tok>) ]
+    [ In(<'bearer', at(tok)>), !HonestRS($RS) ]
   -->
-    [ ToRS($RS, <'bearer', ~tok>) ]
+    [ ToRS($RS, <'bearer', at(tok)>) ]
 
 #ifdef NO_AUD
 
 // NO_AUD: the token is valid at an honest AS, but its audience is not checked.
 rule RS_Accepts:
-    [ ToRS($RS, <'bearer', ~tok>), !HonestRS($RS)
-    , !Token(~tok, $AS, $U, aud) ]
-  --[ RSAccepts($RS, $U, aud, ~tok) ]->
+    [ ToRS($RS, <'bearer', at(~tok)>), !HonestRS($RS)
+    , !Token(at(~tok), $AS, $U, aud) ]
+  --[ RSAccepts($RS, $U, aud, at(~tok)) ]->
     [ ]
 
 #else
 
 // Audience must be this MCP server (RFC 8707 §2; MCP "Token Handling").
 rule RS_Accepts:
-    [ ToRS($RS, <'bearer', ~tok>), !HonestRS($RS)
-    , !Token(~tok, $AS, $U, $RS) ]
-  --[ RSAccepts($RS, $U, $RS, ~tok) ]->
+    [ ToRS($RS, <'bearer', at(~tok)>), !HonestRS($RS)
+    , !Token(at(~tok), $AS, $U, $RS) ]
+  --[ RSAccepts($RS, $U, $RS, at(~tok)) ]->
     [ ]
 
 #endif
@@ -276,12 +283,27 @@ rule Dishonest_RS_Leaks:
 /* Lemmas                                                             */
 /* ------------------------------------------------------------------ */
 
+// Sources lemmas (proved by induction). They tell Tamarin where a code or
+// token in the client's hands can come from, which stops the loop
+// "attacker injects x into the client -> client leaks x -> attacker knows x".
+lemma code_sources [sources]:
+  "All sid c as code #i.
+     ClientRedeems(sid, c, as, code) @ #i
+     ==> (Ex #j. CodeIssued(code) @ #j & #j < #i)
+       | (Ex #j. KU(code) @ #j & #j < #i)"
+
+lemma token_sources [sources]:
+  "All sid c rs tok #i.
+     ClientUsesToken(sid, c, rs, tok) @ #i
+     ==> (Ex as u aud #j. TokenIssued(tok, as, u, aud) @ #j & #j < #i)
+       | (Ex #j. KU(tok) @ #j & #j < #i)"
+
 // Sanity: a fully honest run reaches an honest MCP server.
 lemma executable:
   exists-trace
   "Ex rs u t #i. RSAccepts(rs, u, rs, t) @ #i
-     & not (Ex x #j. DishonestAS(x) @ #j)
-     & not (Ex x #j. DishonestRS(x) @ #j)"
+     & not (Ex x #j. AS_Dishonest(x) @ #j)
+     & not (Ex x #j. RS_Dishonest(x) @ #j)"
 
 // P2: an honest MCP server accepts a token for user U only if U consented
 // to access for that very server.
@@ -294,7 +316,7 @@ lemma rs_accepts_only_consented:
 lemma token_secrecy:
   "All t as u rs #i.
      TokenIssued(t, as, u, rs) @ #i
-     & not (Ex #j. DishonestRS(rs) @ #j)
+     & not (Ex #j. RS_Dishonest(rs) @ #j)
      ==> not (Ex #k. K(t) @ #k)"
 
 end
