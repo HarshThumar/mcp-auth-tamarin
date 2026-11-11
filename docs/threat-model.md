@@ -24,4 +24,14 @@ Each model should **rediscover a known, already-fixed issue** when the fix is re
 | Model | Known issue used as ground truth |
 |---|---|
 | 01 | [GHSA-qx49-fqc8-xw99](https://github.com/modelcontextprotocol/python-sdk/security/advisories/GHSA-qx49-fqc8-xw99): credentials not bound to their AS |
-| 02 | [GHSA-w4fh-qvv9-3v23](https://github.com/modelcontextprotocol/python-sdk/security/advisories) / [GHSA-rvq5-wwqv-78pq](https://github.com/modelcontextprotocol/typescript-sdk/security/advisories): server accepts tokens issued for another resource (to confirm) |
+| 02 `NO_AUD` | [GHSA-w4fh-qvv9-3v23](https://github.com/advisories/GHSA-w4fh-qvv9-3v23) (Python SDK, CVE-2026-116684) / [GHSA-rvq5-wwqv-78pq](https://github.com/advisories/GHSA-rvq5-wwqv-78pq) (TypeScript SDK, CVE-2026-111771): server accepts tokens issued for another resource (confirmed 11 Nov 2026) |
+| 02 `NO_ISS` | AS mix-up attack ([RFC 9700 §4.4](https://datatracker.ietf.org/doc/html/rfc9700#section-4.4), [RFC 9207](https://datatracker.ietf.org/doc/rfc9207/)): PKCE alone does not stop it |
+| 02 `ISS_OPTIONAL` | Not a bug report: checks the MCP draft's current text, where the AS only SHOULD send `iss` and the client proceeds when `iss` is absent and not advertised. This is a known RFC 9207 limitation, and the draft already says a future revision is expected to make `iss` a MUST |
+
+### Model 02 modelling choices
+
+- One shared honest AS can serve several MCP servers, and every honest MCP server accepts tokens from every honest AS (the setting the audience advisories describe).
+- A malicious MCP server can name any AS in its metadata, including the honest one or an attacker-run one whose metadata it controls (`authorization_response_iss_parameter_supported` true or false).
+- Some honest user approves any authorization request for an honest client (the usual mix-up assumption: the user is already signed in at the honest AS). Clients are honest public clients with no secret, as with CIMD, so the same `client_id` and redirect URI are used at every AS.
+- Authorization requests travel in the front channel and are public. The attacker can send any callback to the client's redirect URI.
+- Not modelled yet: code single-use, refresh tokens, scopes / step-up, DPoP.

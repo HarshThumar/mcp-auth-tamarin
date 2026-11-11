@@ -13,6 +13,18 @@ expectations=(
   "models/01_as_selection.spthy|VULNERABLE|client_credential_secrecy|falsified"
   "models/01_as_selection.spthy|-|executable|verified"
   "models/01_as_selection.spthy|-|client_credential_secrecy|verified"
+  "models/02_code_and_audience.spthy|NO_AUD|executable|verified"
+  "models/02_code_and_audience.spthy|NO_AUD|rs_accepts_only_consented|falsified"
+  "models/02_code_and_audience.spthy|NO_AUD|token_secrecy|verified"
+  "models/02_code_and_audience.spthy|NO_ISS|executable|verified"
+  "models/02_code_and_audience.spthy|NO_ISS|rs_accepts_only_consented|verified"
+  "models/02_code_and_audience.spthy|NO_ISS|token_secrecy|falsified"
+  "models/02_code_and_audience.spthy|ISS_OPTIONAL|executable|verified"
+  "models/02_code_and_audience.spthy|ISS_OPTIONAL|rs_accepts_only_consented|verified"
+  "models/02_code_and_audience.spthy|ISS_OPTIONAL|token_secrecy|falsified"
+  "models/02_code_and_audience.spthy|-|executable|verified"
+  "models/02_code_and_audience.spthy|-|rs_accepts_only_consented|verified"
+  "models/02_code_and_audience.spthy|-|token_secrecy|verified"
 )
 
 declare -A ran=()
