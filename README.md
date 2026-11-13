@@ -21,7 +21,7 @@ Classic formal analyses of OAuth do not cover this exact setup. Real bugs show i
 | # | Model | What it checks | Variants | Status |
 |---|---|---|---|---|
 | 01 | [`01_as_selection.spthy`](models/01_as_selection.spthy) | Does a client credential reach only the AS it belongs to? | `VULNERABLE` (unbound credential) / fixed (bound) | ✅ falsified / verified (CI) |
-| 02 | [`02_code_and_audience.spthy`](models/02_code_and_audience.spthy) | Does a code / token reach only the intended AS and MCP server? (PKCE + RFC 8707 audience + RFC 9207 `iss`) | `NO_AUD` / `NO_ISS` / `ISS_OPTIONAL` / fixed | ✅ attacks found in the three weakened variants; fixed variant verified |
+| 02 | [`02_code_and_audience.spthy`](models/02_code_and_audience.spthy) | Does a code / token reach only the intended AS and MCP server? (PKCE + RFC 8707 audience + RFC 9207 `iss`) | `NO_AUD` / `NO_ISS` / `ISS_OPTIONAL` / `NO_RESOURCE` / fixed | ✅ attacks found in the four weakened variants; fixed variant verified |
 | 03 | Client ID Metadata Documents | one client identity across many ASes | | planned |
 | 04 | Enterprise-Managed Authorization (ID-JAG) | RFC 8693 at the IdP + RFC 7523 at the MCP AS | | planned |
 

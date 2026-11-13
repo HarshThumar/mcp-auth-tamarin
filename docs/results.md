@@ -1,6 +1,6 @@
 # Results
 
-*Model 01 last checked 9 Nov 2026 and model 02 on 11 Nov 2026: Tamarin 1.12.0, Maude 3.5.1 (local WSL run; CI runs the same script).* `scripts/prove.sh` (and CI) checks these expectations automatically: 24/24 pass, about 2 minutes in total. The full Tamarin output is saved in `results/` and uploaded as a CI artifact.
+*Model 01 last checked 9 Nov 2026 and model 02 on 13 Nov 2026: Tamarin 1.12.0, Maude 3.5.1 (local WSL run; CI runs the same script).* `scripts/prove.sh` (and CI) checks these expectations automatically: 29/29 pass, about 2 minutes in total. The full Tamarin output is saved in `results/` and uploaded as a CI artifact.
 
 | Model | Variant | Lemma | Expected | Actual | Notes |
 |---|---|---|---|---|---|
@@ -8,7 +8,7 @@
 | 01 | VULNERABLE | client_credential_secrecy | **falsified** | ✅ falsified (attack found) | attack: malicious RS names its own AS |
 | 01 | fixed | executable | verified | ✅ verified | |
 | 01 | fixed | client_credential_secrecy | verified | ✅ verified | credential bound to its AS |
-| 02 | all four | code_sources, token_sources | verified | ✅ verified | helper (`[sources]`) lemmas, proved by induction; they make the main lemmas terminate |
+| 02 | all five | code_sources, token_sources | verified | ✅ verified | helper (`[sources]`) lemmas, proved by induction; they make the main lemmas terminate |
 | 02 | NO_AUD | executable | verified | ✅ verified (7 steps) | |
 | 02 | NO_AUD | rs_accepts_only_consented | **falsified** | ✅ falsified (8 steps) | R1 below: token replayed from a malicious MCP server to an honest one |
 | 02 | NO_AUD | token_secrecy | verified | ✅ verified (19 steps) | |
@@ -18,6 +18,9 @@
 | 02 | ISS_OPTIONAL | executable | verified | ✅ verified (7 steps) | |
 | 02 | ISS_OPTIONAL | rs_accepts_only_consented | verified | ✅ verified (77 steps) | |
 | 02 | ISS_OPTIONAL | token_secrecy | **falsified** | ✅ falsified (13 steps) | R3 below: same mix-up when the honest AS omits `iss` |
+| 02 | NO_RESOURCE | executable | verified | ✅ verified (7 steps) | |
+| 02 | NO_RESOURCE | rs_accepts_only_consented | **falsified** | ✅ falsified (8 steps) | R4 below: AS ignores `resource`, enabling cross-RS replay |
+| 02 | NO_RESOURCE | token_secrecy | verified | ✅ verified (19 steps) | |
 | 02 | fixed | executable | verified | ✅ verified (7 steps) | |
 | 02 | fixed | rs_accepts_only_consented | verified | ✅ verified (30 steps) | audience checked |
 | 02 | fixed | token_secrecy | verified | ✅ verified (19 steps) | `iss` always sent and checked |
@@ -46,6 +49,13 @@ None of these is a new vulnerability. Each one is the model **rediscovering a pu
 - **What the model shows:** if the honest AS follows the SHOULD loosely and omits `iss`, the attacker-run AS also advertises no `iss` support. The client then cannot tell which AS answered, and R2's attack works again even for a client that implements the table correctly. With `iss` always sent and checked (the fixed variant), the property is verified.
 - **Is it new?** No. It is a known limitation of RFC 9207 (it only protects when the honest AS sends `iss`), and the MCP draft already plans the upgrade. The model gives machine-checked evidence for that planned change. Note too that with Client ID Metadata Documents the client uses the same `client_id` and redirect URI at every AS, so the older mix-up defence (a distinct redirect URI per AS) is not there by default.
 - **Next step:** list it in [spec-gaps.md](spec-gaps.md). Possibly a short supporting comment where the SHOULD→MUST change is discussed.
+
+### R4 (13 Nov 2026): AS ignoring resource indicator enables cross-RS token reuse
+- **Model + lemma:** 02 `-D=NO_RESOURCE`, `rs_accepts_only_consented` falsified (8 steps).
+- **What the spec says:** RFC 8707 §2 requires the authorization server to use the `resource` parameter to restrict the audience of access tokens to the requested resource server. MCP authorization states: "Clients SHOULD refuse an AS that does not support resource indicators."
+- **What the model shows:** when a shared AS does not support RFC 8707 Resource Indicators, it ignores the requested `resource` and mints an unbound/broad token valid for honest resource servers. A malicious MCP server receives the token from the client and replays it to an honest MCP server. Even if the honest MCP server strictly checks that the token audience matches its identity, the replayed token is accepted because the AS failed to restrict the token audience to the malicious server.
+- **Is it new?** No. It formalizes open spec gap G4 from [docs/spec-gaps.md](spec-gaps.md). The machine-checked proof demonstrates that client enforcement of RFC 8707 support at the AS (refusing an AS that lacks resource indicator capability) is necessary to protect against cross-tool token replay in shared-AS ecosystems.
+- **Next step:** Update [docs/spec-gaps.md](spec-gaps.md) marking G4 as modelled, and draft a test case for upstream conformance testing.
 
 ## Modelling notes
 
