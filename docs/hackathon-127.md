@@ -6,8 +6,9 @@ Wiki: https://wiki.ietf.org/en/meeting/127/hackathon · Champion: Harsh Thumar (
 
 1. ✅ Model 01 runs in CI. The `VULNERABLE` variant finds the attack, and the fixed variant verifies.
 2. ✅ Model 02 (done early, 11 Nov): discovery + PKCE + RFC 8707 audience + RFC 9207 `iss`. Attacks found in `NO_AUD`, `NO_ISS` and `ISS_OPTIONAL`; the fixed variant verifies. See [results.md](results.md).
-3. ✅ Modeled open item G4 (AS ignores resource indicator) as `NO_RESOURCE` variant in Model 02. Cross-RS token replay attack found in 8 steps; fixed variant verified (29/29 total lemmas green in CI). See [results.md](results.md) §R4.
-4. A short written results summary prepared for the wiki and hackathon channels.
+3. ✅ Modeled open item G4 (AS ignores resource indicator) as `NO_RESOURCE` variant in Model 02. Cross-RS token replay attack found in 8 steps; fixed variant verified. See [results.md](results.md) §R4.
+4. ✅ Modeled open item G7 (omitting `state` parameter) as `NO_STATE` variant in Model 02. Formally proved that PKCE + RFC 9207 `iss` suffice against code injection and mix-up in the cryptographic model; all 5 lemmas verified (34/34 total lemmas green in CI). See [results.md](results.md) §R5.
+5. A short written results summary prepared for the wiki and hackathon channels.
 
 ## Hours (IST)
 
