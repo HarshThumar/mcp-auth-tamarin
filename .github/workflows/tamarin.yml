@@ -54,6 +54,7 @@ jobs:
 
       - name: Set environment paths
         run: |
+          chmod +x "$HOME/tools/bin/"* || true
           echo "$HOME/tools/bin" >> "$GITHUB_PATH"
           echo "MAUDE_LIB=$HOME/tools/maude" >> "$GITHUB_ENV"
 

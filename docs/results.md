@@ -60,7 +60,7 @@ None of these is a new vulnerability. Each one is the model **rediscovering a pu
 - **What the spec says:** RFC 8707 §2 requires the authorization server to use the `resource` parameter to restrict the audience of access tokens to the requested resource server. MCP authorization states: "Clients SHOULD refuse an AS that does not support resource indicators."
 - **What the model shows:** when a shared AS does not support RFC 8707 Resource Indicators, it ignores the requested `resource` and mints an unbound/broad token valid for honest resource servers. A malicious MCP server receives the token from the client and replays it to an honest MCP server. Even if the honest MCP server strictly checks that the token audience matches its identity, the replayed token is accepted because the AS failed to restrict the token audience to the malicious server.
 - **Is it new?** No. It formalizes open spec gap G4 from [docs/spec-gaps.md](spec-gaps.md). The machine-checked proof demonstrates that client enforcement of RFC 8707 support at the AS (refusing an AS that lacks resource indicator capability) is necessary to protect against cross-tool token replay in shared-AS ecosystems.
-- **Next step:** Update [docs/spec-gaps.md](spec-gaps.md) marking G4 as modelled, and draft a test case for upstream conformance testing.
+- **Next step:** Completed: G4 formalized in [docs/spec-gaps.md](spec-gaps.md) and drafted as conformance test ST-04 in [docs/conformance-test-draft.md](conformance-test-draft.md).
 
 ### R5 (13 Nov 2026): PKCE and issuer binding suffice without state parameter
 - **Model + lemma:** 02 `-D=NO_STATE`, all 5 lemmas verified (`executable` in 6 steps, `rs_accepts_only_consented` in 30 steps, `token_secrecy` in 19 steps).
@@ -70,7 +70,7 @@ None of these is a new vulnerability. Each one is the model **rediscovering a pu
   2. RFC 9207 `iss` is returned and validated by the client to prevent AS mix-up.
   The authorization code returned to the client can only be redeemed if the client supplies the matching `code_verifier`. An attacker cannot inject their own code into the client's callback without the client possessing the corresponding verifier, and the attacker cannot redeem a stolen code without the victim's PKCE verifier.
 - **Is it new?** No. This machine-checked result confirms the theoretical analysis in OAuth 2.1 (§7.5.2) and RFC 9700 (§4.4.1): while `state` provides independent CSRF and session binding, PKCE combined with RFC 9207 `iss` independently prevents authorization code injection and mix-up in the cryptographic model. However, `state` remains practically important for application-layer session recovery, CSRF mitigation across browsing contexts, and defending against non-Dolev-Yao client-side state manipulation.
-- **Next step:** Update [docs/spec-gaps.md](spec-gaps.md) marking G7 as formally modelled and proved.
+- **Next step:** Completed: G7 marked formally proved in [docs/spec-gaps.md](spec-gaps.md).
 
 ## Modelling notes
 

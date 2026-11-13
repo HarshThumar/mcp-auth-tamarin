@@ -28,7 +28,7 @@ functions: cd/1, at/1
  *   P3 token_secrecy: an access token issued by an honest AS for an honest
  *      MCP server never reaches the attacker (covers mix-up).
  *
- * Variants (Tamarin preprocessor flags; scripts/prove.sh runs all four)
+ * Variants (Tamarin preprocessor flags; scripts/prove.sh runs all six)
  *   -D=NO_AUD        the MCP server does not check the token audience.
  *                    Ground truth: GHSA-w4fh-qvv9-3v23 (Python SDK,
  *                    CVE-2026-116684) and GHSA-rvq5-wwqv-78pq (TypeScript SDK,

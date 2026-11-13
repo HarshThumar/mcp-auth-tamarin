@@ -44,15 +44,15 @@ This document provides the Domain-Driven Design (DDD) traceability matrix betwee
 | Step # | Protocol Action | RFC / Spec | Exact Tamarin Rule | State Preconditions & Effects |
 |---|---|---|---|---|
 | S2.1 | Setup AS & RS authorities | RFC 9728, RFC 8414 | `Setup_Honest_AS_Iss`, `Setup_Dishonest_AS_Iss`, `Setup_Dishonest_AS_NoIss`, `Setup_Honest_RS`, `Setup_Dishonest_RS` | Configures honest/dishonest servers and PRM metadata. Under `ISS_OPTIONAL`, honest AS uses `Setup_Honest_AS_NoIss`. |
-| S2.2 | Client discovers tool & requests auth | RFC 7636 (PKCE), RFC 8707 | `Client_Start_Honest_RS` / `Client_Start_Dishonest_RS` | Generates verifier `~ver`, state `~state`, session `~sid`; emits public `authz_request` with PKCE challenge `h(~ver)`. |
+| S2.2 | Client discovers tool & requests auth | RFC 7636 (PKCE), RFC 8707 | `Client_Start_Honest_RS` / `Client_Start_Dishonest_RS` | Generates verifier `~ver`, state `~state`, session `~sid`; emits public `authz_request` with PKCE challenge `h(~ver)`. Under `NO_STATE`, uses public constant `'no_state'` instead of `~state`. |
 | S2.3 | AS authorizes & returns code | RFC 9207, OAuth 2.1 | `AS_Authorize_Iss` / `AS_Authorize_NoIss` | Emits `Consent($U, $C, $RS, $AS)` and `cd(~code)`. Under `NO_RESOURCE`, binds code to `'any'` instead of `$RS`. |
-| S2.4 | Attacker intercepts or injects callback | Dolev-Yao | `Attacker_Callback_Iss` / `Attacker_Callback_NoIss` | Attacker forwards callback to client's redirect URI. |
+| S2.4 | Attacker intercepts or injects callback | Dolev-Yao | `Attacker_Callback_Iss` / `Attacker_Callback_NoIss` | Attacker forwards callback to client's redirect URI (matching `state` as fresh or constant). |
 | S2.5 | Client validates callback & requests token | RFC 9207 §2.4, RFC 8707 §2 | `Client_Callback_Iss` / `Client_Callback_NoIss` | Under fixed variant: compares callback issuer with expected `$AS`. Under `NO_ISS`: ignores issuer. Sends `token_request` with `~ver` over TLS `ToAS`. |
 | S2.6 | AS validates PKCE & issues token | RFC 8707 §2, OAuth 2.1 | `AS_Token` / `AS_Token_From_Network` | Checks `h(~ver)` matches code; mints `at(~tok)` with audience `$RS`. Under `NO_RESOURCE`: mints broad token with audience `$AnyRS`. |
 | S2.7 | Dishonest AS intercepts requests | Threat model | `Dishonest_AS_Leaks`, `Dishonest_AS_Answers` | Leaks incoming token requests; answers on behalf of the attacker AS. |
 | S2.8 | Client uses token at MCP tool | MCP Auth Spec §Token Handling | `Client_Use_Token` | Sends `at(tok)` as Bearer token over TLS channel `ToRS`. |
 | S2.9 | Attacker presents token to RS | Dolev-Yao | `Attacker_To_RS` | Injects any token known to the network into an honest RS. |
-| S2.10 | RS validates audience & executes tool | RFC 8707 §2 | `RS_Accepts` | Fixed variant checks `!Token(at(~tok), $AS, $U, $RS)`. Under `NO_AUD`, accepts any audience `aud`. |
+| S2.10 | RS validates audience & executes tool | RFC 8707 §2 | `RS_Accepts` | Fixed variant checks `!Token(at(~tok), $AS, $U, $RS)`. Under `NO_AUD`, accepts any audience `aud`. Under `NO_RESOURCE`, accepts broad tokens issued for any RS. |
 | S2.11 | Dishonest RS leaks token | Threat model | `Dishonest_RS_Leaks` | Malicious tool forwards received Bearer token to the public network `Out(m)`. |
 
 ---
