@@ -1,6 +1,6 @@
 # Verification Mapping: RFC Specifications ↔ Tamarin Formal Model
 
-This document provides the Domain-Driven Design (DDD) traceability matrix between the **Model Context Protocol (MCP) Authorization draft / IETF RFCs** and the formal multiset rewriting rules in `models/`.
+This document provides the Domain-Driven Design (DDD) traceability matrix between the **Model Context Protocol (MCP) Authorization draft / IETF RFCs** and the exact formal multiset rewriting rules in `models/`.
 
 ---
 
@@ -11,23 +11,23 @@ This document provides the Domain-Driven Design (DDD) traceability matrix betwee
 | **Client (C)** | OAuth 2.1 / RFC 7591 | `$C` | Public MCP client (e.g. AI agent IDE, desktop client) |
 | **Resource Server (RS)** | RFC 9728 / MCP Server | `$RS` | The tool provider endpoint; may be honest or malicious |
 | **Authorization Server (AS)** | RFC 8414 / RFC 9207 | `$AS` | Token-issuing authority; may be honest or attacker-run |
-| **User (U)** | OAuth 2.1 | Implicit consent fact | Resource owner approving authorization requests |
-| **Protected Resource Metadata (PRM)** | RFC 9728 §5.1 | `Out(<'prm', $RS, $AS>)` | RS advertising its chosen AS to the client |
+| **User (U)** | OAuth 2.1 | `$U` in `Consent($U, $C, $RS, $AS)` | Resource owner approving authorization requests |
+| **Protected Resource Metadata (PRM)** | RFC 9728 §5.1 | `!PRM($RS, $AS)` | RS advertising its chosen AS to the client |
 | **Client Credential** | RFC 7591 / GHSA-qx49-fqc8-xw99 | `!ClientCred($C, $AS, ~cred)` | Fresh secret bound to a specific AS |
 | **Authorization Code** | OAuth 2.1 §4.1.2 | `cd(~code)` | Opaque handle tagged constructor `cd/1` |
-| **Code Verifier / Challenge** | RFC 7636 (PKCE) | `~cv`, `h(~cv)` | S256 code challenge |
+| **Code Verifier / Challenge** | RFC 7636 (PKCE) | `~ver`, `h(~ver)` | S256 code challenge |
 | **Resource Indicator** | RFC 8707 | `$RS` parameter in auth & token req | Scope/audience target URI |
 | **Issuer Parameter** | RFC 9207 §2 | `$AS` in redirect response | AS identity parameter preventing mix-up |
-| **Access Token** | OAuth 2.1 §1.4 / RFC 8707 §2 | `at(~code)` | Bearer token tagged constructor `at/1` |
+| **Access Token** | OAuth 2.1 §1.4 / RFC 8707 §2 | `at(~tok)` | Bearer token tagged constructor `at/1` |
 
 ---
 
 ## 2. Protocol Step ↔ Rule Traceability Matrix
 
 ### Model 01 (`models/01_as_selection.spthy`)
-*Focus: Credential isolation and Authorization Server discovery binding (GHSA-qx49-fqc8-xw99).*
+*Focus: Credential isolation and Authorization Server discovery binding ([GHSA-qx49-fqc8-xw99](https://github.com/modelcontextprotocol/python-sdk/security/advisories/GHSA-qx49-fqc8-xw99)).*
 
-| Step # | Protocol Action | RFC / Spec | Tamarin Rule | State Preconditions & Effects |
+| Step # | Protocol Action | RFC / Spec | Exact Tamarin Rule | State Preconditions & Effects |
 |---|---|---|---|---|
 | S1.1 | Client registers with honest AS | RFC 7591 §3 | `Register_Client` | Generates fresh credential `~cred`, records `!ClientCred($C, $AS, ~cred)`. |
 | S1.2 | Attacker deploys dishonest AS | Threat model | `Compromise_AS` | Marks endpoint `!Dishonest($X)`. |
@@ -39,25 +39,77 @@ This document provides the Domain-Driven Design (DDD) traceability matrix betwee
 ---
 
 ### Model 02 (`models/02_code_and_audience.spthy`)
-*Focus: Token audience validation (RFC 8707) and issuer verification (RFC 9207).*
+*Focus: Token audience validation (RFC 8707), issuer verification (RFC 9207), and AS resource indicators (RFC 8707).*
 
-| Step # | Protocol Action | RFC / Spec | Tamarin Rule | State Preconditions & Effects |
+| Step # | Protocol Action | RFC / Spec | Exact Tamarin Rule | State Preconditions & Effects |
 |---|---|---|---|---|
-| S2.1 | RS publishes metadata pointing to AS | RFC 9728 §5.1 | `Setup_Honest_RS` / `Setup_Dishonest_RS` | Honest RS names honest AS; dishonest RS can name any AS. |
-| S2.2 | Client requests authorization | RFC 7636 (PKCE) | `Client_Auth_Request` | Creates fresh verifier `~cv`, sends public request with challenge `h(~cv)` and target `resource`. |
-| S2.3 | Honest AS issues code | RFC 9207 / OAuth 2.1 | `Honest_AS_Authorization_Response` | Emits code with `iss` parameter (or omits under `ISS_OPTIONAL`). |
-| S2.4 | Client processes redirect callback | RFC 9207 §2.4 | `Client_Callback` | Under fixed variant: checks `iss` matches expected AS before redeeming code. |
-| S2.5 | Client redeems code at token endpoint | RFC 8707 §2 | `Client_Token_Request` | Sends code + `~cv` over TLS channel `ToAS` to the recorded AS. |
-| S2.6 | AS validates PKCE & issues token | OAuth 2.1 + RFC 8707 | `Honest_AS_Token_Response` | Mints access token `at(code)` bound to the requested resource. |
-| S2.7 | Client accesses MCP tool | MCP Auth Spec §Token Handling | `Client_Accesses_RS` | Presents `at(code)` to target RS. |
-| S2.8 | RS validates audience & accepts token | RFC 8707 §2 | `Honest_RS_Accepts_Token` | Validates token audience matches RS identity (`rs_accepts_only_consented`). |
+| S2.1 | Setup AS & RS authorities | RFC 9728, RFC 8414 | `Setup_Honest_AS_Iss`, `Setup_Dishonest_AS_Iss`, `Setup_Dishonest_AS_NoIss`, `Setup_Honest_RS`, `Setup_Dishonest_RS` | Configures honest/dishonest servers and PRM metadata. Under `ISS_OPTIONAL`, honest AS uses `Setup_Honest_AS_NoIss`. |
+| S2.2 | Client discovers tool & requests auth | RFC 7636 (PKCE), RFC 8707 | `Client_Start_Honest_RS` / `Client_Start_Dishonest_RS` | Generates verifier `~ver`, state `~state`, session `~sid`; emits public `authz_request` with PKCE challenge `h(~ver)`. |
+| S2.3 | AS authorizes & returns code | RFC 9207, OAuth 2.1 | `AS_Authorize_Iss` / `AS_Authorize_NoIss` | Emits `Consent($U, $C, $RS, $AS)` and `cd(~code)`. Under `NO_RESOURCE`, binds code to `'any'` instead of `$RS`. |
+| S2.4 | Attacker intercepts or injects callback | Dolev-Yao | `Attacker_Callback_Iss` / `Attacker_Callback_NoIss` | Attacker forwards callback to client's redirect URI. |
+| S2.5 | Client validates callback & requests token | RFC 9207 §2.4, RFC 8707 §2 | `Client_Callback_Iss` / `Client_Callback_NoIss` | Under fixed variant: compares callback issuer with expected `$AS`. Under `NO_ISS`: ignores issuer. Sends `token_request` with `~ver` over TLS `ToAS`. |
+| S2.6 | AS validates PKCE & issues token | RFC 8707 §2, OAuth 2.1 | `AS_Token` / `AS_Token_From_Network` | Checks `h(~ver)` matches code; mints `at(~tok)` with audience `$RS`. Under `NO_RESOURCE`: mints broad token with audience `$AnyRS`. |
+| S2.7 | Dishonest AS intercepts requests | Threat model | `Dishonest_AS_Leaks`, `Dishonest_AS_Answers` | Leaks incoming token requests; answers on behalf of the attacker AS. |
+| S2.8 | Client uses token at MCP tool | MCP Auth Spec §Token Handling | `Client_Use_Token` | Sends `at(tok)` as Bearer token over TLS channel `ToRS`. |
+| S2.9 | Attacker presents token to RS | Dolev-Yao | `Attacker_To_RS` | Injects any token known to the network into an honest RS. |
+| S2.10 | RS validates audience & executes tool | RFC 8707 §2 | `RS_Accepts` | Fixed variant checks `!Token(at(~tok), $AS, $U, $RS)`. Under `NO_AUD`, accepts any audience `aud`. |
+| S2.11 | Dishonest RS leaks token | Threat model | `Dishonest_RS_Leaks` | Malicious tool forwards received Bearer token to the public network `Out(m)`. |
 
 ---
 
 ## 3. Formal Security Properties (Lemmas)
 
-| Lemma | Mathematical Statement | Real-World Guarantee |
-|---|---|---|
-| `client_credential_secrecy` | $\forall C, A, cred. \text{Registered}(C, A, cred) \implies \neg K(cred) \lor \text{Compromised}(A)$ | Client secrets never reach unauthorized servers unless the home AS itself is compromised. |
-| `rs_accepts_only_consented` | $\forall U, RS, token. \text{RS\_Accepted}(RS, token) \implies \text{Consented}(U, RS)$ | An honest tool server never executes an action without explicit user authorization for that specific tool. |
-| `token_secrecy` | $\forall AS, RS, token. \text{IssuedFor}(token, AS, RS) \implies \neg K(token)$ | Tokens issued for legitimate servers are never intercepted by network or malicious servers. |
+### Model 01 Lemmas
+
+```tamarin
+// Executability sanity check: an uncompromised run can issue tokens.
+lemma executable:
+  exists-trace
+  "Ex C A #i. TokenIssued(C, A) @ #i
+     & not (Ex X #k. Compromised(X) @ #k)"
+
+// Secrecy (P1): client credential stays secret unless the registered AS is compromised.
+lemma client_credential_secrecy:
+  "All C A cred #i.
+     Registered(C, A, cred) @ #i
+     ==> ( not (Ex #j. K(cred) @ #j) )
+       | ( Ex #k. Compromised(A) @ #k )"
+```
+
+### Model 02 Lemmas
+
+```tamarin
+// Induction helper: restricts origins of codes redeemed by the client.
+lemma code_sources [sources]:
+  "All sid c as code #i.
+     ClientRedeems(sid, c, as, code) @ #i
+     ==> (Ex #j. CodeIssued(code) @ #j & #j < #i)
+       | (Ex #j. KU(code) @ #j & #j < #i)"
+
+// Induction helper: restricts origins of tokens used by the client.
+lemma token_sources [sources]:
+  "All sid c rs tok #i.
+     ClientUsesToken(sid, c, rs, tok) @ #i
+     ==> (Ex as u aud #j. TokenIssued(tok, as, u, aud) @ #j & #j < #i)
+       | (Ex #j. KU(tok) @ #j & #j < #i)"
+
+// Executability sanity check: an honest client reaches an honest MCP server.
+lemma executable:
+  exists-trace
+  "Ex rs u t #i. RSAccepts(rs, u, rs, t) @ #i
+     & not (Ex x #j. AS_Dishonest(x) @ #j)
+     & not (Ex x #j. RS_Dishonest(x) @ #j)"
+
+// Authorization Consent (P2): an honest MCP server only accepts a token if user consented to THAT server.
+lemma rs_accepts_only_consented:
+  "All rs u aud t #i.
+     RSAccepts(rs, u, aud, t) @ #i
+     ==> Ex c as #j. Consent(u, c, rs, as) @ #j"
+
+// Token Secrecy (P3): tokens minted for an honest MCP server are never learned by the attacker.
+lemma token_secrecy:
+  "All t as u rs #i.
+     TokenIssued(t, as, u, rs) @ #i
+     & not (Ex #j. RS_Dishonest(rs) @ #j)
+     ==> not (Ex #k. K(t) @ #k)"
+```
