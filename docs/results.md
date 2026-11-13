@@ -22,7 +22,7 @@
 | 02 | NO_RESOURCE | rs_accepts_only_consented | **falsified** | ✅ falsified (8 steps) | R4 below: AS ignores `resource`, enabling cross-RS replay |
 | 02 | NO_RESOURCE | token_secrecy | verified | ✅ verified (19 steps) | |
 | 02 | NO_STATE | executable | verified | ✅ verified (6 steps) | |
-| 02 | NO_STATE | rs_accepts_only_consented | verified | ✅ verified (30 steps) | R5 below: PKCE + iss suffice without state |
+| 02 | NO_STATE | rs_accepts_only_consented | verified | ✅ verified (30 steps) | R5 below: P2/P3 do not depend on `state` |
 | 02 | NO_STATE | token_secrecy | verified | ✅ verified (19 steps) | |
 | 02 | fixed | executable | verified | ✅ verified (7 steps) | |
 | 02 | fixed | rs_accepts_only_consented | verified | ✅ verified (30 steps) | audience checked |
@@ -55,22 +55,24 @@ None of these is a new vulnerability. Each one is the model **rediscovering a pu
 - **Is it new?** No. It is a known limitation of RFC 9207 (it only protects when the honest AS sends `iss`), and the MCP draft already plans the upgrade. The model gives machine-checked evidence for that planned change. Note too that with Client ID Metadata Documents the client uses the same `client_id` and redirect URI at every AS, so the older mix-up defence (a distinct redirect URI per AS) is not there by default.
 - **Next step:** list it in [spec-gaps.md](spec-gaps.md). Possibly a short supporting comment where the SHOULD→MUST change is discussed.
 
-### R4 (13 Nov 2026): AS ignoring resource indicator enables cross-RS token reuse
+### R4 (13 Nov 2026): an AS that ignores `resource` and issues broad audiences enables cross-RS token reuse
 - **Model + lemma:** 02 `-D=NO_RESOURCE`, `rs_accepts_only_consented` falsified (8 steps).
-- **What the spec says:** RFC 8707 §2 requires the authorization server to use the `resource` parameter to restrict the audience of access tokens to the requested resource server. MCP authorization states: "Clients SHOULD refuse an AS that does not support resource indicators."
-- **What the model shows:** when a shared AS does not support RFC 8707 Resource Indicators, it ignores the requested `resource` and mints an unbound/broad token valid for honest resource servers. A malicious MCP server receives the token from the client and replays it to an honest MCP server. Even if the honest MCP server strictly checks that the token audience matches its identity, the replayed token is accepted because the AS failed to restrict the token audience to the malicious server.
-- **Is it new?** No. It formalizes open spec gap G4 from [docs/spec-gaps.md](spec-gaps.md). The machine-checked proof demonstrates that client enforcement of RFC 8707 support at the AS (refusing an AS that lacks resource indicator capability) is necessary to protect against cross-tool token replay in shared-AS ecosystems.
-- **Next step:** Completed: G4 formalized in [docs/spec-gaps.md](spec-gaps.md) and drafted as conformance test ST-04 in [docs/conformance-test-draft.md](conformance-test-draft.md).
+- **What the spec says:** RFC 8707 binds tokens to audiences "**when the Authorization Server supports the capability**" (MCP Security Considerations, Token Audience Binding). MCP clients "**MUST** send this parameter regardless of whether authorization servers support it" (MCP Authorization, Resource Parameter Implementation). The spec does **not** tell clients to refuse an AS that lacks RFC 8707 support, and there is no standard AS metadata field that advertises it.
+- **What the model shows:** the AS ignores the requested `resource` and mints a token whose audience is *some honest MCP server* (`$AnyRS`, chosen freely by the model), i.e. a broad audience that covers the victim. A malicious MCP server receives the token from the client and replays it to that honest server, whose audience check passes. The user only consented to the malicious server.
+- **Scope of the result:** the attack needs an AS whose default audience covers other servers (e.g. "all APIs behind this AS"). If an AS that ignores `resource` issues tokens with **no** audience, a strictly checking MCP server rejects them and this trace does not apply. The model has no rule for a client refusing such an AS, so it does not prove that clients must refuse one; it shows that audience checks at the MCP server cannot compensate for an AS that issues broad audiences.
+- **Is it new?** No. It formalizes open spec gap G4 from [docs/spec-gaps.md](spec-gaps.md), the documented RFC 8707 caveat.
+- **Modelling note:** `token_secrecy` is keyed on the audience the client *requested*, so it stays verified here even though the attacker holds a token that the honest server accepts. P2 is the lemma that catches this variant.
+- **Next step:** a question for review: should the spec say how a client can tell whether an AS honours `resource`? Not turned into a conformance test (see [conformance-test-draft.md](conformance-test-draft.md)).
 
-### R5 (13 Nov 2026): PKCE and issuer binding suffice without state parameter
+### R5 (13 Nov 2026): P2 and P3 do not depend on the `state` parameter
 - **Model + lemma:** 02 `-D=NO_STATE`, all 5 lemmas verified (`executable` in 6 steps, `rs_accepts_only_consented` in 30 steps, `token_secrecy` in 19 steps).
-- **What the spec says:** MCP Authorization states: "Clients SHOULD use the `state` parameter to maintain state between the request and callback." (RFC 6749 §4.1.1 / RFC 9700 §4.4.1 recommendation).
-- **What the model shows:** when the client omits session-specific `state` (or uses a constant atom `'no_state'`), the Dolev-Yao attacker still cannot inject authorization codes or induce authorization mix-up so long as:
-  1. RFC 7636 PKCE is strictly enforced (the AS binds `code_challenge` to `code` and verifies `code_verifier`), and
-  2. RFC 9207 `iss` is returned and validated by the client to prevent AS mix-up.
-  The authorization code returned to the client can only be redeemed if the client supplies the matching `code_verifier`. An attacker cannot inject their own code into the client's callback without the client possessing the corresponding verifier, and the attacker cannot redeem a stolen code without the victim's PKCE verifier.
-- **Is it new?** No. This machine-checked result confirms the theoretical analysis in OAuth 2.1 (§7.5.2) and RFC 9700 (§4.4.1): while `state` provides independent CSRF and session binding, PKCE combined with RFC 9207 `iss` independently prevents authorization code injection and mix-up in the cryptographic model. However, `state` remains practically important for application-layer session recovery, CSRF mitigation across browsing contexts, and defending against non-Dolev-Yao client-side state manipulation.
-- **Next step:** Completed: G7 marked formally proved in [docs/spec-gaps.md](spec-gaps.md).
+- **What the spec says:** "MCP clients **SHOULD** use and verify state parameters in the authorization code flow and discard any results that do not include or have a mismatch with the original state." (MCP Security Considerations, Open Redirection)
+- **What the model shows:** with the client using the public constant `'no_state'`, P2 (`rs_accepts_only_consented`) and P3 (`token_secrecy`) still hold, as long as PKCE is enforced and `iss` is always sent and checked.
+- **Limits of this result (read before citing it):**
+  1. In **every** variant, `state` travels in the public front-channel authorization request, so the Dolev-Yao attacker always knows it. `state` therefore gives no protection in the fixed variant either, and `NO_STATE` differs from fixed only in that the value is a constant. The result is "P2/P3 never relied on `state`", not "removing `state` was shown safe".
+  2. The model has **no dishonest user** and **no session-integrity lemma** (e.g. "the token a client ends up with belongs to the user who started the session"). The attacks `state` is meant to stop (CSRF, injection of the attacker's own code to log the victim into the attacker's account) are therefore **not modelled**, and this result says nothing about them.
+- **Is it new?** No. It is consistent with OAuth 2.1 / RFC 9700, which say PKCE can take over `state`'s CSRF role; the model does not test that claim.
+- **Next step (open):** add a dishonest user and a session-integrity lemma so G7 becomes a real test of `state` vs PKCE.
 
 ## Modelling notes
 

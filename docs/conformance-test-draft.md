@@ -10,8 +10,9 @@ This document formalizes test cases derived from machine-checked security proofs
 |---|---|---|---|---|
 | **ST-01** | MCP Server (RS) | RFC 8707 §2 / MCP Token Handling | Model 02 (`NO_AUD`, R1) | Cross-RS token replay ([CVE-2026-116684](https://github.com/advisories/GHSA-w4fh-qvv9-3v23)) |
 | **ST-02** | MCP Client | RFC 9207 §2.4 | Model 02 (`NO_ISS`, R2) | AS mix-up attack ([RFC 9700 §4.4](https://datatracker.ietf.org/doc/html/rfc9700#section-4.4)) |
-| **ST-03** | Auth Server (AS) | MCP Auth Draft §Authorization Response | Model 02 (`ISS_OPTIONAL`, R3) | Mix-up under optional `iss` (proves SHOULD → MUST upgrade) |
-| **ST-04** | MCP Client | RFC 8707 §2 / MCP Spec Gap G4 | Model 02 (`NO_RESOURCE`, R4) | Token leakage across tools sharing an unhardened AS |
+| **ST-03** | Auth Server (AS) | MCP Auth Draft §Authorization Response Validation | Model 02 (`ISS_OPTIONAL`, R3) | Mix-up under optional `iss` (evidence for the planned SHOULD → MUST upgrade). **Warning only** under the current draft |
+
+*ST-04 (client refuses an AS without RFC 8707 support) was withdrawn on 13 Nov 2026: the MCP spec has no such requirement (clients MUST send `resource` "regardless of whether authorization servers support it"), and no standard AS metadata field advertises RFC 8707 support, so the test could not be run. R4 / G4 stay open as a spec question.*
 
 ---
 
@@ -67,22 +68,7 @@ This document formalizes test cases derived from machine-checked security proofs
   1. Client sends an OAuth 2.1 authorization request with standard parameters (`client_id`, `redirect_uri`, `code_challenge`, `resource`).
 - **Action:**
   User authenticates and consents; Authorization Server issues the redirect response.
-- **Expected Conformance Assertions:**
-  1. The redirect URI **MUST** include the `iss` parameter (e.g. `?code=...&state=...&iss=https://as.example`).
-  2. Responses omitting the `iss` parameter **FAIL** conformance.
-
----
-
-### Test ST-04: Client Rejection of AS Without Resource Indicator Support (Client)
-- **Specification Reference:**
-  > "Clients **SHOULD** refuse an AS that does not support resource indicators."
-  > *(MCP Security Considerations & Spec Gap G4)*
-- **Formal Finding:** Finding R4 (`models/02_code_and_audience.spthy -D=NO_RESOURCE`).
-- **Preconditions:**
-  1. MCP server publishes Protected Resource Metadata (`RFC 9728`) naming `https://legacy-as.example`.
-  2. `https://legacy-as.example/.well-known/oauth-authorization-server` does NOT advertise `resource_indicators_supported: true` (or omits RFC 8707 capabilities).
-- **Action:**
-  Client processes the MCP server's 401 challenge and attempts discovery.
-- **Expected Conformance Assertions:**
-  1. The client **MUST NOT** transmit credentials or initiate authorization requests to an AS that ignores resource scoping.
-  2. The client **MUST** report a clear error to the user/runtime stating that the authorization server lacks deterministic resource binding.
+- **Expected Conformance Assertions (current draft: SHOULD):**
+  1. The redirect **SHOULD** include the `iss` parameter (e.g. `?code=...&state=...&iss=https://as.example`). Omitting it is reported as a **warning**, not a failure.
+  2. If the AS includes `iss`, its metadata **MUST** set `authorization_response_iss_parameter_supported` to `true` (this part is already a MUST and can fail).
+  3. Once the planned revision makes `iss` a MUST, assertion 1 becomes a failure.

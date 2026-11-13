@@ -43,9 +43,9 @@ functions: cd/1, at/1
  *                    `iss` (it is a SHOULD) and the client then proceeds when
  *                    the recorded metadata does not advertise `iss` support.
  *                    expected: P2 verified, P3 FALSIFIED
- *   -D=NO_RESOURCE   the AS does not support RFC 8707 Resource Indicators and
- *                    issues tokens with generic audience ('any'); lenient RS
- *                    accepts them (Spec gap G4).
+ *   -D=NO_RESOURCE   the AS ignores RFC 8707 `resource` and mints the token
+ *                    with a broad audience: some honest MCP server ($AnyRS),
+ *                    not necessarily the requested one (Spec gap G4).
  *                    expected: P2 FALSIFIED, P3 verified
  *   -D=NO_STATE      the client does not generate a unique state per session;
  *                    uses a fixed public constant ('no_state') (Spec gap G7).
@@ -128,7 +128,8 @@ restriction rs_set_up_once:
 #ifdef NO_STATE
 
 // NO_STATE (G7): the client does not generate a unique random state per session;
-// it transmits a public constant ('no_state') to test if PKCE + iss suffice.
+// it transmits a public constant ('no_state'). Note: `state` is public in every
+// variant (front channel), and CSRF / session integrity is not modelled.
 rule Client_Start_Honest_RS:
     [ !PRM($RS, $AS), !ASMeta($AS, issSupported)
     , Fr(~sid), Fr(~ver) ]
