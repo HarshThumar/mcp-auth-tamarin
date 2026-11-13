@@ -1,6 +1,6 @@
 # Results
 
-*Model 01 last checked 9 Nov 2026 and model 02 on 13 Nov 2026: Tamarin 1.12.0, Maude 3.5.1 (local WSL run; CI runs the same script).* `scripts/prove.sh` (and CI) checks these expectations automatically: 29/29 pass, about 2 minutes in total. The full Tamarin output is saved in `results/` and uploaded as a CI artifact.
+*Model 01 last checked 9 Nov 2026 and model 02 on 13 Nov 2026: Tamarin 1.12.0, Maude 3.5.1 (local WSL run; CI runs the same script).* `scripts/prove.sh` (and CI) checks these expectations automatically: 34/34 pass, about 2 minutes in total. The full Tamarin output is saved in `results/` and uploaded as a CI artifact.
 
 | Model | Variant | Lemma | Expected | Actual | Notes |
 |---|---|---|---|---|---|
@@ -8,7 +8,7 @@
 | 01 | VULNERABLE | client_credential_secrecy | **falsified** | ✅ falsified (attack found) | attack: malicious RS names its own AS |
 | 01 | fixed | executable | verified | ✅ verified | |
 | 01 | fixed | client_credential_secrecy | verified | ✅ verified | credential bound to its AS |
-| 02 | all five | code_sources, token_sources | verified | ✅ verified | helper (`[sources]`) lemmas, proved by induction; they make the main lemmas terminate |
+| 02 | all six | code_sources, token_sources | verified | ✅ verified | helper (`[sources]`) lemmas, proved by induction; they make the main lemmas terminate |
 | 02 | NO_AUD | executable | verified | ✅ verified (7 steps) | |
 | 02 | NO_AUD | rs_accepts_only_consented | **falsified** | ✅ falsified (8 steps) | R1 below: token replayed from a malicious MCP server to an honest one |
 | 02 | NO_AUD | token_secrecy | verified | ✅ verified (19 steps) | |
@@ -21,11 +21,14 @@
 | 02 | NO_RESOURCE | executable | verified | ✅ verified (7 steps) | |
 | 02 | NO_RESOURCE | rs_accepts_only_consented | **falsified** | ✅ falsified (8 steps) | R4 below: AS ignores `resource`, enabling cross-RS replay |
 | 02 | NO_RESOURCE | token_secrecy | verified | ✅ verified (19 steps) | |
+| 02 | NO_STATE | executable | verified | ✅ verified (6 steps) | |
+| 02 | NO_STATE | rs_accepts_only_consented | verified | ✅ verified (30 steps) | R5 below: PKCE + iss suffice without state |
+| 02 | NO_STATE | token_secrecy | verified | ✅ verified (19 steps) | |
 | 02 | fixed | executable | verified | ✅ verified (7 steps) | |
 | 02 | fixed | rs_accepts_only_consented | verified | ✅ verified (30 steps) | audience checked |
 | 02 | fixed | token_secrecy | verified | ✅ verified (19 steps) | `iss` always sent and checked |
 
-*Note on lemma count: The 29 individual expectations checked by `scripts/prove.sh` comprise: 4 for Model 01 (2 lemmas × 2 variants) + 25 for Model 02 (5 lemmas × 5 variants: `code_sources`, `token_sources`, `executable`, `rs_accepts_only_consented`, `token_secrecy`).*
+*Note on lemma count: The 34 individual expectations checked by `scripts/prove.sh` comprise: 4 for Model 01 (2 lemmas × 2 variants) + 30 for Model 02 (5 lemmas × 6 variants: `code_sources`, `token_sources`, `executable`, `rs_accepts_only_consented`, `token_secrecy`).*
 
 ## Findings and open questions
 
@@ -58,6 +61,16 @@ None of these is a new vulnerability. Each one is the model **rediscovering a pu
 - **What the model shows:** when a shared AS does not support RFC 8707 Resource Indicators, it ignores the requested `resource` and mints an unbound/broad token valid for honest resource servers. A malicious MCP server receives the token from the client and replays it to an honest MCP server. Even if the honest MCP server strictly checks that the token audience matches its identity, the replayed token is accepted because the AS failed to restrict the token audience to the malicious server.
 - **Is it new?** No. It formalizes open spec gap G4 from [docs/spec-gaps.md](spec-gaps.md). The machine-checked proof demonstrates that client enforcement of RFC 8707 support at the AS (refusing an AS that lacks resource indicator capability) is necessary to protect against cross-tool token replay in shared-AS ecosystems.
 - **Next step:** Update [docs/spec-gaps.md](spec-gaps.md) marking G4 as modelled, and draft a test case for upstream conformance testing.
+
+### R5 (13 Nov 2026): PKCE and issuer binding suffice without state parameter
+- **Model + lemma:** 02 `-D=NO_STATE`, all 5 lemmas verified (`executable` in 6 steps, `rs_accepts_only_consented` in 30 steps, `token_secrecy` in 19 steps).
+- **What the spec says:** MCP Authorization states: "Clients SHOULD use the `state` parameter to maintain state between the request and callback." (RFC 6749 §4.1.1 / RFC 9700 §4.4.1 recommendation).
+- **What the model shows:** when the client omits session-specific `state` (or uses a constant atom `'no_state'`), the Dolev-Yao attacker still cannot inject authorization codes or induce authorization mix-up so long as:
+  1. RFC 7636 PKCE is strictly enforced (the AS binds `code_challenge` to `code` and verifies `code_verifier`), and
+  2. RFC 9207 `iss` is returned and validated by the client to prevent AS mix-up.
+  The authorization code returned to the client can only be redeemed if the client supplies the matching `code_verifier`. An attacker cannot inject their own code into the client's callback without the client possessing the corresponding verifier, and the attacker cannot redeem a stolen code without the victim's PKCE verifier.
+- **Is it new?** No. This machine-checked result confirms the theoretical analysis in OAuth 2.1 (§7.5.2) and RFC 9700 (§4.4.1): while `state` provides independent CSRF and session binding, PKCE combined with RFC 9207 `iss` independently prevents authorization code injection and mix-up in the cryptographic model. However, `state` remains practically important for application-layer session recovery, CSRF mitigation across browsing contexts, and defending against non-Dolev-Yao client-side state manipulation.
+- **Next step:** Update [docs/spec-gaps.md](spec-gaps.md) marking G7 as formally modelled and proved.
 
 ## Modelling notes
 

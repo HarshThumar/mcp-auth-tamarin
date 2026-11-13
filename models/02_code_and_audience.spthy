@@ -47,6 +47,9 @@ functions: cd/1, at/1
  *                    issues tokens with generic audience ('any'); lenient RS
  *                    accepts them (Spec gap G4).
  *                    expected: P2 FALSIFIED, P3 verified
+ *   -D=NO_STATE      the client does not generate a unique state per session;
+ *                    uses a fixed public constant ('no_state') (Spec gap G7).
+ *                    expected: P2 verified, P3 verified
  *   (no flag)        honest ASes always send `iss`, the client always checks
  *                    it, the MCP server checks the audience.
  *                    expected: P2 verified, P3 verified
@@ -122,6 +125,26 @@ restriction rs_set_up_once:
 /* Client: discovery + authorization request (PKCE, resource, state)  */
 /* ------------------------------------------------------------------ */
 
+#ifdef NO_STATE
+
+// NO_STATE (G7): the client does not generate a unique random state per session;
+// it transmits a public constant ('no_state') to test if PKCE + iss suffice.
+rule Client_Start_Honest_RS:
+    [ !PRM($RS, $AS), !ASMeta($AS, issSupported)
+    , Fr(~sid), Fr(~ver) ]
+  --[ ClientStart(~sid, $C, $RS, $AS) ]->
+    [ St_Client_1(~sid, $C, $RS, $AS, issSupported, ~ver, 'no_state')
+    , Out(<'authz_request', $AS, $C, h(~ver), $RS, 'no_state'>) ]
+
+rule Client_Start_Dishonest_RS:
+    [ !DishonestRS($RS), In(<'prm', $RS, $AS>), !ASMeta($AS, issSupported)
+    , Fr(~sid), Fr(~ver) ]
+  --[ ClientStart(~sid, $C, $RS, $AS) ]->
+    [ St_Client_1(~sid, $C, $RS, $AS, issSupported, ~ver, 'no_state')
+    , Out(<'authz_request', $AS, $C, h(~ver), $RS, 'no_state'>) ]
+
+#else
+
 // Client connects to an honest MCP server and reads its (authentic) PRM.
 rule Client_Start_Honest_RS:
     [ !PRM($RS, $AS), !ASMeta($AS, issSupported)
@@ -137,6 +160,8 @@ rule Client_Start_Dishonest_RS:
   --[ ClientStart(~sid, $C, $RS, $AS) ]->
     [ St_Client_1(~sid, $C, $RS, $AS, issSupported, ~ver, ~state)
     , Out(<'authz_request', $AS, $C, h(~ver), $RS, ~state>) ]
+
+#endif
 
 /* ------------------------------------------------------------------ */
 /* Honest AS: authorization endpoint                                  */
@@ -183,14 +208,14 @@ rule AS_Authorize_NoIss:
 // The attacker can also send any callback to the client's redirect URI
 // (e.g. what its own AS "returns").
 rule Attacker_Callback_Iss:
-    [ In(<'authz_response', cd(code), ~state, $iss>) ]
+    [ In(<'authz_response', cd(code), state, $iss>) ]
   -->
-    [ ToClient($C, <'authz_response', cd(code), ~state, $iss>) ]
+    [ ToClient($C, <'authz_response', cd(code), state, $iss>) ]
 
 rule Attacker_Callback_NoIss:
-    [ In(<'authz_response_noiss', cd(code), ~state>) ]
+    [ In(<'authz_response_noiss', cd(code), state>) ]
   -->
-    [ ToClient($C, <'authz_response_noiss', cd(code), ~state>) ]
+    [ ToClient($C, <'authz_response_noiss', cd(code), state>) ]
 
 /* ------------------------------------------------------------------ */
 /* Client: callback, `iss` check (RFC 9207 §2.4), token request       */
@@ -200,8 +225,8 @@ rule Attacker_Callback_NoIss:
 
 // NO_ISS: whatever `iss` says, the code goes to the AS this session started with.
 rule Client_Callback_Iss:
-    [ St_Client_1(~sid, $C, $RS, $AS, issSupported, ~ver, ~state)
-    , ToClient($C, <'authz_response', cd(code), ~state, $iss>) ]
+    [ St_Client_1(~sid, $C, $RS, $AS, issSupported, ~ver, state)
+    , ToClient($C, <'authz_response', cd(code), state, $iss>) ]
   --[ ClientRedeems(~sid, $C, $AS, cd(code)) ]->
     [ St_Client_2(~sid, $C, $RS, $AS)
     , ToAS($AS, ~sid, <'token_request', $C, cd(code), ~ver, $RS>) ]
@@ -210,8 +235,8 @@ rule Client_Callback_Iss:
 
 // `iss` present: compare with the recorded issuer (rows 1 and 3 of the table).
 rule Client_Callback_Iss:
-    [ St_Client_1(~sid, $C, $RS, $AS, issSupported, ~ver, ~state)
-    , ToClient($C, <'authz_response', cd(code), ~state, $AS>) ]
+    [ St_Client_1(~sid, $C, $RS, $AS, issSupported, ~ver, state)
+    , ToClient($C, <'authz_response', cd(code), state, $AS>) ]
   --[ ClientRedeems(~sid, $C, $AS, cd(code)) ]->
     [ St_Client_2(~sid, $C, $RS, $AS)
     , ToAS($AS, ~sid, <'token_request', $C, cd(code), ~ver, $RS>) ]
@@ -221,8 +246,8 @@ rule Client_Callback_Iss:
 // `iss` absent: proceed only if the recorded metadata does not advertise
 // `iss` support (row 4). Row 2 (advertised but absent) has no rule: reject.
 rule Client_Callback_NoIss:
-    [ St_Client_1(~sid, $C, $RS, $AS, 'false', ~ver, ~state)
-    , ToClient($C, <'authz_response_noiss', cd(code), ~state>) ]
+    [ St_Client_1(~sid, $C, $RS, $AS, 'false', ~ver, state)
+    , ToClient($C, <'authz_response_noiss', cd(code), state>) ]
   --[ ClientRedeems(~sid, $C, $AS, cd(code)) ]->
     [ St_Client_2(~sid, $C, $RS, $AS)
     , ToAS($AS, ~sid, <'token_request', $C, cd(code), ~ver, $RS>) ]
