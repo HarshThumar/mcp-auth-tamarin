@@ -2,7 +2,15 @@ name: tamarin
 
 on:
   push:
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '.gitignore'
   pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '.gitignore'
   workflow_dispatch:
 
 permissions:
@@ -22,7 +30,15 @@ jobs:
       - name: Lint model headers
         run: bash scripts/check-model-header.sh
 
+      - name: Cache Maude and Tamarin binaries
+        id: tool-cache
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/tools
+          key: tools-tamarin-${{ env.TAMARIN_VERSION }}-maude-${{ env.MAUDE_VERSION }}
+
       - name: Install Maude and Tamarin (release binaries)
+        if: steps.tool-cache.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           mkdir -p "$HOME/tools/bin" "$HOME/tools/maude"
@@ -35,6 +51,9 @@ jobs:
           curl -sSL -o tamarin.tar.gz "https://github.com/tamarin-prover/tamarin-prover/releases/download/${TAMARIN_VERSION}/tamarin-prover-${TAMARIN_VERSION}-linux64-ubuntu.tar.gz"
           tar xzf tamarin.tar.gz -C bin
           chmod +x bin/tamarin-prover
+
+      - name: Set environment paths
+        run: |
           echo "$HOME/tools/bin" >> "$GITHUB_PATH"
           echo "MAUDE_LIB=$HOME/tools/maude" >> "$GITHUB_ENV"
 
