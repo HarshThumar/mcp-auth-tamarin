@@ -19,6 +19,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Lint model headers
+        run: bash scripts/check-model-header.sh
+
       - name: Install Maude and Tamarin (release binaries)
         run: |
           set -euo pipefail

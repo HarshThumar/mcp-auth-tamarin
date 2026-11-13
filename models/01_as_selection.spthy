@@ -4,6 +4,8 @@ begin
 /*
  * Model 01: which authorization server receives the client's credentials?
  *
+ * Spec pinned: RFC 9728 and MCP authorization, draft as of 11 Nov 2026
+ *
  * Context
  *   In MCP, the server a client connects to tells the client which
  *   authorization server (AS) to use, via its Protected Resource Metadata
