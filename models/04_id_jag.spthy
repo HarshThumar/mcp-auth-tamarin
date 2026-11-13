@@ -1,0 +1,344 @@
+theory MCP_ID_JAG
+begin
+
+builtins: signing
+
+// Access tokens are tagged opaque handles (as in model 02): no destructor.
+functions: at/1
+
+/*
+ * Model 04: Enterprise-Managed Authorization (ID-JAG). Does an Identity
+ * Assertion JWT Authorization Grant only produce access tokens for the
+ * client, authorization server and MCP server it was issued for?
+ *
+ * Spec pinned: MCP ext-auth Enterprise-Managed Authorization, draft as of
+ *   13 Nov 2026 (specification/stable/enterprise-managed-authorization/draft)
+ *   and draft-ietf-oauth-identity-assertion-authz-grant-06 (31 Oct 2026).
+ *   - Client -> IdP: RFC 8693 token exchange. The IdP MUST authenticate the
+ *     client and check the ID token audience is that client. `audience`
+ *     MUST be the issuer of the Resource Authorization Server (RAS = the
+ *     MCP authorization server). `resource` is OPTIONAL; when present it
+ *     MUST be the MCP server's resource identifier.
+ *   - ID-JAG (signed by the IdP): iss, sub, aud (= RAS issuer), client_id,
+ *     resource (optional), jti.
+ *   - Client -> RAS: RFC 7523 JWT bearer grant with the ID-JAG, plus client
+ *     authentication (private_key_jwt here).
+ *   - RAS (draft §4.4.1): MUST check iss is a trusted IdP and the signature;
+ *     `aud` MUST contain its own issuer (audience-injection defence); MUST
+ *     reject unless the `client_id` claim identifies the authenticated
+ *     client. The access token MUST be audience-restricted to the MCP server
+ *     named in `resource`.
+ *
+ * Properties
+ *   P2 rs_accepts_only_authorized: an honest MCP server only accepts a token
+ *      for user U if the IdP issued an ID-JAG for U naming that MCP server
+ *      as `resource`.
+ *   P3 token_secrecy: an access token from an honest RAS, held by an honest
+ *      client, whose (actual) audience is an honest MCP server, never
+ *      reaches the attacker.
+ *   P4 ras_grant_agreement: an honest RAS only issues a token for user U to
+ *      client c if the IdP issued an ID-JAG for U naming this RAS as `aud`
+ *      and c as `client_id`.
+ *
+ * Variants (preprocessor flags; they can be combined)
+ *   -D=NO_IDJAG_AUD       RAS skips the ID-JAG `aud` check.
+ *   -D=NO_CLIENT_BINDING  RAS skips "client_id claim = authenticated client".
+ *   both flags            RAS skips both checks.
+ *   -D=NO_RESOURCE_CLAIM  client omits the optional `resource`; the RAS then
+ *                         issues a broad token whose audience is some honest
+ *                         MCP server ($AnyRS), as in model 02 NO_RESOURCE.
+ *   (no flag)             all checks on, `resource` always sent.
+ *   Expected results: see scripts/prove.sh and docs/results.md.
+ *
+ * Abstraction (see docs/threat-model.md)
+ *   - Dolev-Yao network. TLS to a named endpoint = private linear fact
+ *     (ToIdP / FromIdP / ToRAS / FromRAS / ToRS). Dishonest endpoints leak.
+ *   - One honest IdP, trusted by every honest RAS. Its key never leaks.
+ *   - SSO (OIDC/SAML login and the ID token) is abstracted into the TLS
+ *     channel from an honest client to the IdP: the IdP knows which client
+ *     and which user it is serving. Users only sign in to honest clients,
+ *     so attacker-run clients never obtain ID-JAGs for honest users.
+ *   - Worst-case IdP policy: it issues an ID-JAG for any `audience` and
+ *     `resource` the honest client asks for (the draft's "SHOULD check
+ *     resource is governed by audience" is not relied on).
+ *   - Clients are confidential (private_key_jwt). The RAS always checks the
+ *     client assertion's signature and that its `aud` is the RAS itself.
+ *     The attacker can register its own clients (its own keys).
+ *   - Honest MCP servers name an honest RAS; a dishonest MCP server names
+ *     any RAS. The client sets `resource` to the MCP server it talks to
+ *     (RFC 9728 resource check assumed).
+ *   - Every honest MCP server accepts tokens from every honest RAS whose
+ *     audience is itself.
+ *   - Left out: jti single-use, expiry, refresh tokens, scopes, DPoP / cnf,
+ *     multiple IdPs, the `act` claim.
+ */
+
+/* ------------------------------------------------------------------ */
+/* Setup                                                              */
+/* ------------------------------------------------------------------ */
+
+rule Setup_IdP:
+    [ Fr(~skI) ]
+  --[ IdPSetup($I) ]->
+    [ !IdPKey($I, ~skI), !IdPPk($I, pk(~skI)), Out(pk(~skI)) ]
+
+rule Setup_Honest_RAS:
+    [ ]
+  --[ RASSetup($A), RAS_Honest($A) ]->
+    [ !HonestRAS($A), !RAS($A) ]
+
+rule Setup_Dishonest_RAS:
+    [ ]
+  --[ RASSetup($X), RAS_Dishonest($X) ]->
+    [ !DishonestRAS($X), !RAS($X) ]
+
+rule Setup_Honest_RS:
+    [ !HonestRAS($A) ]
+  --[ RSSetup($RS), RS_Honest($RS) ]->
+    [ !HonestRS($RS), !PRM($RS, $A) ]
+
+rule Setup_Dishonest_RS:
+    [ ]
+  --[ RSSetup($X), RS_Dishonest($X) ]->
+    [ !DishonestRS($X) ]
+
+rule Setup_Honest_Client:
+    [ Fr(~skC) ]
+  --[ ClientSetup($C), Client_Honest($C) ]->
+    [ !HonestClient($C), !ClientKey($C, ~skC), !ClientPk($C, pk(~skC))
+    , Out(pk(~skC)) ]
+
+// The attacker registers its own client (its key is public).
+rule Setup_Dishonest_Client:
+    [ Fr(~skC) ]
+  --[ ClientSetup($C), Client_Dishonest($C) ]->
+    [ !ClientPk($C, pk(~skC)), Out(~skC) ]
+
+restriction idp_once:
+  "All x y #i #j. IdPSetup(x) @ #i & IdPSetup(y) @ #j ==> #i = #j"
+
+restriction ras_once:
+  "All x #i #j. RASSetup(x) @ #i & RASSetup(x) @ #j ==> #i = #j"
+
+restriction rs_once:
+  "All x #i #j. RSSetup(x) @ #i & RSSetup(x) @ #j ==> #i = #j"
+
+restriction client_once:
+  "All x #i #j. ClientSetup(x) @ #i & ClientSetup(x) @ #j ==> #i = #j"
+
+restriction equality:
+  "All x y #i. Eq(x, y) @ #i ==> x = y"
+
+// The two RAS checks that the variants switch off.
+#ifdef NO_IDJAG_AUD
+#else
+restriction ras_checks_idjag_aud:
+  "All x y #i. CheckAud(x, y) @ #i ==> x = y"
+#endif
+
+#ifdef NO_CLIENT_BINDING
+#else
+restriction ras_checks_client_binding:
+  "All x y #i. CheckClient(x, y) @ #i ==> x = y"
+#endif
+
+/* ------------------------------------------------------------------ */
+/* Client: discovery and token exchange at the IdP (RFC 8693)         */
+/* ------------------------------------------------------------------ */
+
+#ifdef NO_RESOURCE_CLAIM
+
+rule Client_Start_Honest_RS:
+    [ !HonestClient($C), !PRM($RS, $A), Fr(~sid) ]
+  --[ ClientStart(~sid, $C, $U, $RS, $A) ]->
+    [ St_Client_1(~sid, $C, $U, $RS, $A)
+    , ToIdP(~sid, <'token_exchange', $C, $U, $A, 'none'>) ]
+
+rule Client_Start_Dishonest_RS:
+    [ !HonestClient($C), !DishonestRS($RS), In(<'prm', $RS, $A>), !RAS($A)
+    , Fr(~sid) ]
+  --[ ClientStart(~sid, $C, $U, $RS, $A) ]->
+    [ St_Client_1(~sid, $C, $U, $RS, $A)
+    , ToIdP(~sid, <'token_exchange', $C, $U, $A, 'none'>) ]
+
+#else
+
+rule Client_Start_Honest_RS:
+    [ !HonestClient($C), !PRM($RS, $A), Fr(~sid) ]
+  --[ ClientStart(~sid, $C, $U, $RS, $A) ]->
+    [ St_Client_1(~sid, $C, $U, $RS, $A)
+    , ToIdP(~sid, <'token_exchange', $C, $U, $A, $RS>) ]
+
+rule Client_Start_Dishonest_RS:
+    [ !HonestClient($C), !DishonestRS($RS), In(<'prm', $RS, $A>), !RAS($A)
+    , Fr(~sid) ]
+  --[ ClientStart(~sid, $C, $U, $RS, $A) ]->
+    [ St_Client_1(~sid, $C, $U, $RS, $A)
+    , ToIdP(~sid, <'token_exchange', $C, $U, $A, $RS>) ]
+
+#endif
+
+// IdP: client authenticated by the TLS channel; worst-case policy grants any
+// audience/resource requested.
+rule IdP_Issue_IDJAG:
+    [ ToIdP(~sid, <'token_exchange', $C, $U, $A, res>)
+    , !IdPKey($I, ~skI), Fr(~jti) ]
+  --[ IdJagIssued($I, $U, $A, $C, res) ]->
+    [ FromIdP(~sid, < <'idjag', $I, $U, $A, $C, res, ~jti>
+                    , sign(<'idjag', $I, $U, $A, $C, res, ~jti>, ~skI) >) ]
+
+/* ------------------------------------------------------------------ */
+/* Client: JWT bearer grant at the RAS (RFC 7523) with private_key_jwt */
+/* ------------------------------------------------------------------ */
+
+rule Client_JWT_Bearer:
+    [ St_Client_1(~sid, $C, $U, $RS, $A), FromIdP(~sid, idjag)
+    , !ClientKey($C, ~skC), Fr(~cj) ]
+  --[ ClientSendsGrant(~sid, $C, $A) ]->
+    [ St_Client_2(~sid, $C, $U, $RS, $A)
+    , ToRAS($A, ~sid, <'jwt_bearer', idjag
+                      , < <'cassert', $C, $A, ~cj>
+                        , sign(<'cassert', $C, $A, ~cj>, ~skC) > >) ]
+
+/* ------------------------------------------------------------------ */
+/* Honest RAS: token endpoint                                         */
+/* ------------------------------------------------------------------ */
+
+// Over the honest client's TLS connection.
+rule RAS_Token:
+    [ ToRAS($A, ~sid, <'jwt_bearer', < <'idjag', I, u, aud, cid, res, jti>, sigI >
+                      , < <'cassert', c, $A, cj>, sigC > >)
+    , !HonestRAS($A), !IdPPk(I, pkI), !ClientPk(c, pkC), Fr(~tok) ]
+  --[ Eq(verify(sigI, <'idjag', I, u, aud, cid, res, jti>, pkI), true)
+    , Eq(verify(sigC, <'cassert', c, $A, cj>, pkC), true)
+    , CheckAud(aud, $A), CheckClient(cid, c)
+    , TokenIssued(at(~tok), $A, u, c, res) ]->
+    [ !Token(at(~tok), $A, u, res), FromRAS(~sid, at(~tok)) ]
+
+// The same endpoint called from the network (e.g. by an attacker client).
+rule RAS_Token_From_Network:
+    [ In(<'jwt_bearer', < <'idjag', I, u, aud, cid, res, jti>, sigI >
+         , < <'cassert', c, $A, cj>, sigC > >)
+    , !HonestRAS($A), !IdPPk(I, pkI), !ClientPk(c, pkC), Fr(~tok) ]
+  --[ Eq(verify(sigI, <'idjag', I, u, aud, cid, res, jti>, pkI), true)
+    , Eq(verify(sigC, <'cassert', c, $A, cj>, pkC), true)
+    , CheckAud(aud, $A), CheckClient(cid, c)
+    , TokenIssued(at(~tok), $A, u, c, res) ]->
+    [ !Token(at(~tok), $A, u, res), Out(at(~tok)) ]
+
+#ifdef NO_RESOURCE_CLAIM
+
+// No `resource` in the ID-JAG: the RAS issues a broad token valid at some
+// honest MCP server.
+rule RAS_Token_NoRes:
+    [ ToRAS($A, ~sid, <'jwt_bearer', < <'idjag', I, u, aud, cid, 'none', jti>, sigI >
+                      , < <'cassert', c, $A, cj>, sigC > >)
+    , !HonestRAS($A), !IdPPk(I, pkI), !ClientPk(c, pkC), !HonestRS($AnyRS)
+    , Fr(~tok) ]
+  --[ Eq(verify(sigI, <'idjag', I, u, aud, cid, 'none', jti>, pkI), true)
+    , Eq(verify(sigC, <'cassert', c, $A, cj>, pkC), true)
+    , CheckAud(aud, $A), CheckClient(cid, c)
+    , TokenIssued(at(~tok), $A, u, c, $AnyRS) ]->
+    [ !Token(at(~tok), $A, u, $AnyRS), FromRAS(~sid, at(~tok)) ]
+
+rule RAS_Token_NoRes_From_Network:
+    [ In(<'jwt_bearer', < <'idjag', I, u, aud, cid, 'none', jti>, sigI >
+         , < <'cassert', c, $A, cj>, sigC > >)
+    , !HonestRAS($A), !IdPPk(I, pkI), !ClientPk(c, pkC), !HonestRS($AnyRS)
+    , Fr(~tok) ]
+  --[ Eq(verify(sigI, <'idjag', I, u, aud, cid, 'none', jti>, pkI), true)
+    , Eq(verify(sigC, <'cassert', c, $A, cj>, pkC), true)
+    , CheckAud(aud, $A), CheckClient(cid, c)
+    , TokenIssued(at(~tok), $A, u, c, $AnyRS) ]->
+    [ !Token(at(~tok), $A, u, $AnyRS), Out(at(~tok)) ]
+
+#endif
+
+// Attacker-run RAS: leaks everything it receives, answers as it likes.
+rule Dishonest_RAS_Leaks:
+    [ ToRAS($X, ~sid, m), !DishonestRAS($X) ]
+  --[ LeakedToRAS($X) ]->
+    [ Out(<~sid, m>) ]
+
+rule Dishonest_RAS_Answers:
+    [ In(<~sid, at(tok)>) ]
+  -->
+    [ FromRAS(~sid, at(tok)) ]
+
+/* ------------------------------------------------------------------ */
+/* Client uses the token; MCP server checks its audience              */
+/* ------------------------------------------------------------------ */
+
+rule Client_Use_Token:
+    [ St_Client_2(~sid, $C, $U, $RS, $A), FromRAS(~sid, at(tok)) ]
+  --[ ClientUsesToken(~sid, $C, $RS, at(tok)) ]->
+    [ ToRS($RS, at(tok)) ]
+
+rule Attacker_To_RS:
+    [ In(at(tok)), !HonestRS($RS) ]
+  -->
+    [ ToRS($RS, at(tok)) ]
+
+rule RS_Accepts:
+    [ ToRS($RS, at(~tok)), !HonestRS($RS), !Token(at(~tok), A, u, $RS) ]
+  --[ RSAccepts($RS, u, at(~tok)) ]->
+    [ ]
+
+rule Dishonest_RS_Leaks:
+    [ ToRS($X, m), !DishonestRS($X) ]
+  --[ LeakedToRS($X) ]->
+    [ Out(m) ]
+
+/* ------------------------------------------------------------------ */
+/* Lemmas                                                             */
+/* ------------------------------------------------------------------ */
+
+// Where a token in the client's hands comes from (stops the loop
+// "attacker injects a token -> client leaks it -> attacker knows it").
+lemma token_sources [sources]:
+  "All sid c rs tok #i.
+     ClientUsesToken(sid, c, rs, tok) @ #i
+     ==> (Ex a u c2 aud #j. TokenIssued(tok, a, u, c2, aud) @ #j & #j < #i)
+       | (Ex #j. KU(tok) @ #j & #j < #i)"
+
+// Sanity: a fully honest run reaches an honest MCP server.
+lemma executable:
+  exists-trace
+  "Ex rs u t #i. RSAccepts(rs, u, t) @ #i
+     & not (Ex x #j. RAS_Dishonest(x) @ #j)
+     & not (Ex x #j. RS_Dishonest(x) @ #j)
+     & not (Ex x #j. Client_Dishonest(x) @ #j)"
+
+// P2: an honest MCP server accepts a token for U only if the IdP issued an
+// ID-JAG for U naming that MCP server as `resource`.
+lemma rs_accepts_only_authorized:
+  "All rs u t #i.
+     RSAccepts(rs, u, t) @ #i
+     ==> Ex idp a c #j. IdJagIssued(idp, u, a, c, rs) @ #j"
+
+// P2': an honest MCP server accepts a token for U only if some client acting
+// for U set out to use THAT MCP server. Unlike P2, this does not fail by
+// definition when `resource` is omitted, so it is the meaningful check for
+// NO_RESOURCE_CLAIM.
+lemma rs_accepts_only_requested:
+  "All rs u t #i.
+     RSAccepts(rs, u, t) @ #i
+     ==> Ex sid c a #j. ClientStart(sid, c, u, rs, a) @ #j"
+
+// P3: a token from an honest RAS to an honest client, whose actual audience
+// is an honest MCP server, stays secret.
+lemma token_secrecy:
+  "All t a u c rs #i.
+     TokenIssued(t, a, u, c, rs) @ #i
+     & not (Ex #j. Client_Dishonest(c) @ #j)
+     & not (Ex #j. RS_Dishonest(rs) @ #j)
+     ==> not (Ex #k. K(t) @ #k)"
+
+// P4: an honest RAS issues a token for U to client c only if the IdP issued
+// an ID-JAG for U with aud = this RAS and client_id = c.
+lemma ras_grant_agreement:
+  "All t a u c aud #i.
+     TokenIssued(t, a, u, c, aud) @ #i
+     ==> Ex idp res #j. IdJagIssued(idp, u, a, c, res) @ #j"
+
+end

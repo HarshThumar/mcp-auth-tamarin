@@ -1,6 +1,6 @@
 # Results
 
-*Model 01 last checked 9 Nov 2026 and model 02 on 13 Nov 2026: Tamarin 1.12.0, Maude 3.5.1 (local WSL run; CI runs the same script).* `scripts/prove.sh` (and CI) checks these expectations automatically: 34/34 pass, about 2 minutes in total. The full Tamarin output is saved in `results/` and uploaded as a CI artifact.
+*Model 01 last checked 9 Nov 2026, model 02 on 13 Nov 2026, models 03 and 04 on 14 Nov 2026: Tamarin 1.12.0, Maude 3.5.1 (local WSL run; CI runs the same script).* `scripts/prove.sh` (and CI) checks these expectations automatically: 159/159 pass, about 17 minutes locally. The full Tamarin output is saved in `results/` and uploaded as a CI artifact.
 
 | Model | Variant | Lemma | Expected | Actual | Notes |
 |---|---|---|---|---|---|
@@ -29,6 +29,36 @@
 | 02 | fixed | token_secrecy | verified | ✅ verified (19 steps) | `iss` always sent and checked |
 
 *Note on lemma count: The 34 individual expectations checked by `scripts/prove.sh` comprise: 4 for Model 01 (2 lemmas × 2 variants) + 30 for Model 02 (5 lemmas × 6 variants: `code_sources`, `token_sources`, `executable`, `rs_accepts_only_consented`, `token_secrecy`).*
+
+### Model 03: one CIMD client identity at many ASes (14 Nov 2026)
+
+P3 = `token_secrecy`, P4 = `refresh_token_secrecy`. In every variant below, the helper lemmas (`client_key_secret`, three `[sources]` lemmas), `executable`, `executable_refresh` and P2 (`rs_accepts_only_consented`) are verified. Numbers are proof steps.
+
+| Client | Checks removed | P3 | P4 | Write-up |
+|---|---|---|---|---|
+| confidential (`private_key_jwt`) | none | ✅ verified (84) | ✅ verified (22) | combined binding rule holds |
+| confidential | `NO_ISS` | ✅ verified (92) | ✅ verified (25) | R6: assertion `aud` alone stops mix-up |
+| confidential | `AS_NO_ASSERTION_AUD` | ✅ verified (99) | ✅ verified (22) | `iss` alone stops mix-up |
+| confidential | `NO_ISS` + `AS_NO_ASSERTION_AUD` | ❌ falsified (13) | ❌ falsified (11) | R6 |
+| confidential | `RT_UNBOUND` | ✅ verified (139) | ❌ falsified (9) | R7: refresh token leaks but is useless |
+| confidential | `RT_UNBOUND` + `AS_NO_ASSERTION_AUD` | ❌ falsified (10) | ❌ falsified (9) | R7 |
+| confidential | `NO_META_CHECK` | ❌ attack trace found (14) | ❌ attack trace found (9) | R8 |
+| public (`none`) | none | ✅ verified (72) | ✅ verified (19) | combined binding rule holds |
+| public | `NO_ISS` | ❌ falsified (8) | ❌ falsified (8) | as model 02 R2 |
+| public | `NO_META_CHECK` | ❌ falsified (8) | ❌ falsified (8) | R8 |
+| public | `RT_UNBOUND` | ❌ falsified (8) | ❌ falsified (8) | R7 |
+
+### Model 04: Enterprise-Managed Authorization / ID-JAG (14 Nov 2026)
+
+P2 = `rs_accepts_only_authorized`, P2' = `rs_accepts_only_requested`, P3 = `token_secrecy`, P4 = `ras_grant_agreement`. `token_sources` and `executable` are verified in every variant.
+
+| Variant | P2 | P2' | P3 | P4 | Write-up |
+|---|---|---|---|---|---|
+| fixed | ✅ (20) | ✅ (20) | ✅ (16) | ✅ (13) | |
+| `NO_IDJAG_AUD` | ✅ | ✅ | ✅ | ✅ | R9: client binding alone suffices |
+| `NO_CLIENT_BINDING` | ✅ | ✅ | ✅ | ✅ | R9: ID-JAG `aud` alone suffices |
+| `NO_IDJAG_AUD` + `NO_CLIENT_BINDING` | ✅ | ✅ | ✅ | ❌ falsified (10) | R9: cross-RAS ID-JAG replay |
+| `NO_RESOURCE_CLAIM` | ❌ (by definition) | ❌ falsified (6) | ❌ falsified (8) | ✅ | R10 |
 
 ## Findings and open questions
 
@@ -73,6 +103,48 @@ None of these is a new vulnerability. Each one is the model **rediscovering a pu
   2. The model has **no dishonest user** and **no session-integrity lemma** (e.g. "the token a client ends up with belongs to the user who started the session"). The attacks `state` is meant to stop (CSRF, injection of the attacker's own code to log the victim into the attacker's account) are therefore **not modelled**, and this result says nothing about them.
 - **Is it new?** No. It is consistent with OAuth 2.1 / RFC 9700, which say PKCE can take over `state`'s CSRF role; the model does not test that claim.
 - **Next step (open):** add a dishonest user and a session-integrity lemma so G7 becomes a real test of `state` vs PKCE.
+
+### Model 03 summary: one rule that binds a client to its AS
+With both client types modelled together, the fixed variant verifies every property once **all** of the following hold:
+1. the client validates the metadata `issuer` (RFC 8414 §3.3) and records it;
+2. it checks `iss` in the authorization response against that recorded issuer (RFC 9207);
+3. it sends a stored refresh token only to the issuer it came from;
+4. the MCP server checks the token audience (RFC 8707);
+5. for confidential clients, the client assertion's `aud` is the recorded issuer and the AS checks it.
+
+The variant table shows which checks are needed for which client. For a **public** client, removing any one of 1–3 breaks P3. For a **confidential** client, checks 2 and 5 back each other up, so only removing both breaks P3. Check 1 is needed for both client types (R8). This is a modelling result about the spec, not about any implementation.
+
+### R6 (14 Nov 2026): with `private_key_jwt`, the assertion audience stops AS mix-up even without `iss`
+- **Model + lemmas:** 03, confidential client. `-D=NO_ISS`: P3 and P4 verified. `-D=NO_ISS -D=AS_NO_ASSERTION_AUD`: P3 falsified (13 steps), P4 falsified (11 steps).
+- **What the model shows:** in the R2 mix-up, the client sends the code, the PKCE verifier **and a client assertion** to the attacker's AS. The assertion's `aud` is the attacker AS's issuer, so the honest AS rejects it when the attacker replays it. Mix-up only succeeds if the client skips `iss` **and** the honest AS does not check the assertion audience. Public clients have no assertion, so for them `iss` is the only defence (public `NO_ISS`: falsified in 8 steps, as in R2).
+- **Why this is CIMD-specific:** with a CIMD client, the same `client_id` and signing key are used at every AS, including one an untrusted MCP server names. Assertions signed for an attacker-run AS are therefore valid signatures that could be replayed anywhere, and the audience check is what makes them useless elsewhere.
+- **Is it new?** No. It is the setting of the audience-injection attacks on `private_key_jwt` (Hosseyni, Küsters, Würtele, 2025) and the fix in draft-ietf-oauth-rfc7523bis (the assertion `aud` is the AS issuer). The model shows how that fix interacts with RFC 9207 in MCP's "server picks the AS" setting.
+
+### R7 (14 Nov 2026): refresh tokens and the AS-binding rule
+- **Model + lemmas:** 03 `-D=RT_UNBOUND`. Confidential: P4 falsified (9 steps), P3 verified. Confidential plus `AS_NO_ASSERTION_AUD`: P3 falsified (10 steps). Public: P3 and P4 falsified (8 steps each).
+- **What the spec says:** "Clients that use pre-registered credentials, or persist client credentials obtained via Dynamic Client Registration, **MUST** associate those credentials with the specific authorization server that issued them, keyed by the authorization server's `issuer` identifier." (Client Registration, Authorization Server Binding.) The rule names client credentials; refresh tokens are not mentioned. CIMD client IDs are described as "portable across authorization servers".
+- **What the model shows:** a client that sends its stored refresh token to whatever AS the current MCP server names leaks it to an attacker-run AS. For a public client that alone gives the attacker access tokens for the honest MCP server. For a confidential client the leaked refresh token is useless on its own, because the honest AS also requires a client assertion addressed to it.
+- **Is it new?** No. Not sending a token to the wrong issuer is standard OAuth practice, and the 2026 SDK advisories on credential binding are of the same family. The open question is spec wording: should the AS-binding rule name refresh tokens explicitly (spec gap G3)?
+
+### R8 (14 Nov 2026): an unvalidated metadata `issuer` defeats `iss` and the assertion audience at once
+- **Model + lemmas:** 03 `-D=NO_META_CHECK`. Public: P3 and P4 falsified (8 steps each). Confidential: attack traces for P3 (14 steps) and P4 (9 steps).
+- **What the spec says:** the client "**MUST** record the `issuer` value from the selected authorization server's validated metadata document … it provides no protection if the expected issuer was obtained from an unvalidated source." (Authorization Response Validation.)
+- **What the model shows:** an attacker-run AS publishes metadata whose `issuer` is the honest AS's issuer. A client that records it without the RFC 8414 §3.3 check accepts the honest AS's `iss` while talking to the attacker's endpoints, and (confidential clients) signs its assertions with `aud` = the honest AS. Both defences from R6 then fail together. The refresh-token trace (9 steps) is exactly this: the client refreshes at the attacker's AS, which claims the honest issuer, and leaks the refresh token and an assertion valid at the honest AS.
+- **Termination:** for the confidential client the all-traces P3/P4 lemmas did not terminate (10 min each, several heuristics tried). That variant instead states the attacks as `exists-trace` lemmas: `refresh_token_secrecy_attack` (9 steps) and `token_secrecy_attack` (14 steps; it asks for the stolen token to come from a refresh, which narrows the search; the search takes about 11 minutes locally). A found trace is a counterexample to the all-traces lemma, so the result is the same; only the proof style differs.
+- **Is it new?** No. The spec already warns about it, and RFC 8414 §3.3 exists for this reason. The model gives a machine-checked trace for the warning.
+
+### R9 (14 Nov 2026): ID-JAG: either RAS check alone stops cross-RAS replay
+- **Model + lemma:** 04. `-D=NO_IDJAG_AUD` and `-D=NO_CLIENT_BINDING` alone: all verified. Both together: `ras_grant_agreement` (P4) falsified (10 steps).
+- **What the spec says:** the RAS "MUST" check that the ID-JAG `aud` is its own issuer, and "MUST" reject it unless the `client_id` claim identifies the authenticated client (draft-ietf-oauth-identity-assertion-authz-grant-06 §4.4.1).
+- **What the model shows:** a malicious MCP server names an attacker-run RAS. The honest client gets an ID-JAG for it and sends it there; the attacker replays it at an honest RAS while authenticating as its own client. With both checks off, the honest RAS issues a token for the user to the attacker's client. Either check alone stops it: the `aud` check rejects the foreign ID-JAG, and client binding rejects it because the attacker cannot authenticate as the honest client (its assertions are bound to the attacker RAS). P3 stays verified because the replayed ID-JAG names the attacker's MCP server as `resource`.
+- **Is it new?** No. It is the replay/audience-injection class the draft's checks are written against; the model shows the two checks are redundant with each other in this setting.
+
+### R10 (14 Nov 2026): ID-JAG `resource` is OPTIONAL
+- **Model + lemmas:** 04 `-D=NO_RESOURCE_CLAIM`: P2' falsified (6 steps), P3 falsified (8 steps).
+- **What the spec says:** `resource` in the token exchange and in the ID-JAG is OPTIONAL. The MCP profile says the access token "MUST be audience-restricted to the MCP Server" identified by the ID-JAG's `resource` claim, but does not say what happens when the claim is absent.
+- **What the model shows:** a client talking to a malicious MCP server omits `resource`. If the RAS then issues a broad token whose audience covers an honest MCP server (the same assumption as R4), the malicious server receives it and replays it there.
+- **Scope:** as in R4, this needs a RAS that issues broad audiences when `resource` is absent. P2 is falsified by definition here (it asks for an ID-JAG naming the server, which never exists), so P2' is the meaningful lemma.
+- **Is it new?** No; it is G4 again, in the enterprise profile. New spec question G9: should the MCP profile make `resource` REQUIRED?
 
 ## Modelling notes
 

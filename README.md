@@ -22,8 +22,8 @@ Classic formal analyses of OAuth do not cover this exact setup. Real bugs show i
 |---|---|---|---|---|
 | 01 | [`01_as_selection.spthy`](models/01_as_selection.spthy) | Does a client credential reach only the AS it belongs to? | `VULNERABLE` (unbound credential) / fixed (bound) | ✅ falsified / verified (CI) |
 | 02 | [`02_code_and_audience.spthy`](models/02_code_and_audience.spthy) | Does a code / token reach only the intended AS and MCP server? (PKCE + RFC 8707 audience + RFC 9207 `iss`) | `NO_AUD` / `NO_ISS` / `ISS_OPTIONAL` / `NO_RESOURCE` / `NO_STATE` / fixed | ✅ attacks found in weakened variants; fixed and NO_STATE verified (34/34 lemmas in CI) |
-| 03 | Client ID Metadata Documents | one client identity across many ASes | | planned |
-| 04 | Enterprise-Managed Authorization (ID-JAG) | RFC 8693 at the IdP + RFC 7523 at the MCP AS | | planned |
+| 03 | [`03_cimd_client_binding.spthy`](models/03_cimd_client_binding.spthy) | One CIMD client identity at many ASes: which checks (metadata `issuer`, `iss`, refresh-token binding, assertion `aud`) keep codes, tokens and refresh tokens bound to their AS? | confidential / `PUBLIC` × `NO_META_CHECK` / `NO_ISS` / `RT_UNBOUND` / `AS_NO_ASSERTION_AUD` | ✅ fixed verified for both client types; attacks in weakened variants (CI) |
+| 04 | [`04_id_jag.spthy`](models/04_id_jag.spthy) | Enterprise-Managed Authorization (ID-JAG): RFC 8693 at the IdP + RFC 7523 at the MCP AS | `NO_IDJAG_AUD` / `NO_CLIENT_BINDING` / both / `NO_RESOURCE_CLAIM` / fixed | ✅ fixed verified; replay needs both RAS checks off (CI) |
 
 Results are tracked in [docs/results.md](docs/results.md). Each modelling choice is listed in [docs/threat-model.md](docs/threat-model.md).
 

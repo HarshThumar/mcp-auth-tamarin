@@ -8,7 +8,8 @@ Wiki: https://wiki.ietf.org/en/meeting/127/hackathon · Champion: Harsh Thumar (
 2. ✅ Model 02 (done early, 11 Nov): discovery + PKCE + RFC 8707 audience + RFC 9207 `iss`. Attacks found in `NO_AUD`, `NO_ISS` and `ISS_OPTIONAL`; the fixed variant verifies. See [results.md](results.md).
 3. ✅ Modeled open item G4 (AS ignores resource indicator) as `NO_RESOURCE` variant in Model 02. Cross-RS token replay found in 8 steps when the AS issues a broad audience; fixed variant verified. See [results.md](results.md) §R4.
 4. ✅ Modeled open item G7 (omitting `state` parameter) as `NO_STATE` variant in Model 02. All 5 lemmas verified: P2 and P3 do not depend on `state` (34/34 total lemmas green in CI). CSRF / session integrity, which `state` targets, is not modelled yet. See [results.md](results.md) §R5.
-5. A short written results summary prepared for the wiki and hackathon channels.
+5. ✅ Model 03 (CIMD: one client identity at many ASes) and Model 04 (ID-JAG), done early (14 Nov). Model 03 checks together the metadata `issuer` check, `iss`, refresh-token binding and the client assertion audience, for public and confidential clients. See [results.md](results.md) R6–R10.
+6. A short written results summary prepared for the wiki and hackathon channels.
 
 ## Hours (IST)
 
@@ -21,4 +22,4 @@ Wiki: https://wiki.ietf.org/en/meeting/127/hackathon · Champion: Harsh Thumar (
 ## Afterwards
 
 - IETF 127 OAuth sessions on 18, 19 (joint with WIMSE) and 20 Nov: share the model and ask for a review of the assumptions.
-- Dec 2026 – Feb 2027: models 03–04, upstream conformance tests, write-up.
+- Upstream conformance tests (coordinate on issue #78 first), write-up.

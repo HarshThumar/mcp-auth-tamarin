@@ -1,0 +1,501 @@
+theory MCP_CIMD_Client_Binding
+begin
+
+builtins: hashing, signing
+
+// Codes, access tokens and refresh tokens are tagged opaque handles (no
+// destructors), as in model 02: no type confusion between them and other
+// fresh values. The attacker can still build cd(x) / at(x) / rt(x) itself.
+functions: cd/1, at/1, rt/1
+
+/*
+ * Model 03: one client identity at many authorization servers (CIMD).
+ * Which client-side and AS-side checks, together, keep a client's codes,
+ * tokens, refresh tokens and client assertions bound to the AS they belong to?
+ *
+ * Spec pinned: MCP authorization draft as of 13 Nov 2026
+ *   https://modelcontextprotocol.io/specification/draft/basic/authorization
+ *   https://modelcontextprotocol.io/specification/draft/basic/authorization/client-registration
+ *   draft-ietf-oauth-client-id-metadata-document-03 (CIMD)
+ *   - the client_id is an HTTPS URL; the AS fetches the client's metadata
+ *     document from it (redirect URIs, and a JWKS for private_key_jwt).
+ *     "Client IDs based on Client ID Metadata Documents are portable across
+ *     authorization servers": the SAME client_id and key are used at every
+ *     AS, including one an untrusted MCP server names.
+ *   - Clients "MAY use private_key_jwt for client authentication"
+ *     (RFC 7523 client assertion; its `aud` should be the AS issuer:
+ *     draft-ietf-oauth-rfc7523bis, the audience-injection fix).
+ *   - the client "MUST record the issuer value from the selected
+ *     authorization server's validated metadata document" (RFC 8414 §3.3:
+ *     metadata `issuer` must equal the issuer the client discovered).
+ *   - RFC 9207 `iss` check before sending the code anywhere.
+ *   - Credentials "MUST" be keyed by the AS issuer; this text names
+ *     pre-registered and DCR credentials. Refresh tokens are not named.
+ *
+ * Properties
+ *   P2 rs_accepts_only_consented  (as in model 02)
+ *   P3 token_secrecy              access token from an honest AS for an
+ *                                 honest MCP server never reaches the attacker
+ *   P4 refresh_token_secrecy      a refresh token issued to an honest client
+ *                                 never reaches the attacker
+ *
+ * Client type (preprocessor flag)
+ *   (default)  confidential CIMD client: private_key_jwt, one key for all ASes
+ *   -D=PUBLIC  public CIMD client: token_endpoint_auth_method "none"
+ *
+ * Checks that can be removed (flags, combinable)
+ *   NO_META_CHECK        client records whatever `issuer` the AS metadata
+ *                        claims (no RFC 8414 §3.3 validation)
+ *   NO_ISS               client ignores `iss` in the authorization response
+ *   RT_UNBOUND           client sends a stored refresh token to whatever AS
+ *                        the current MCP server's metadata names
+ *   AS_NO_ASSERTION_AUD  honest AS does not check the client assertion `aud`
+ *   Expected results: see scripts/prove.sh and docs/results.md (R6-R8).
+ *
+ * Abstraction (see docs/threat-model.md; differences from model 02)
+ *   - Dolev-Yao network; TLS = private linear facts; dishonest endpoints leak.
+ *   - An attacker-run AS publishes metadata with ANY `issuer` value,
+ *     including an honest AS's issuer.
+ *   - Honest ASes always send and advertise `iss` (model 02 covers the SHOULD).
+ *   - The CIMD document is fetched over HTTPS from the client's own URL, so
+ *     !Client / !CIMD facts are authentic. Only honest clients are modelled.
+ *   - `state` is left out: model 02 showed P2/P3 do not depend on it.
+ *   - The authorization endpoint always sends the code to the client's
+ *     registered redirect URI (the AS validates it against the CIMD document).
+ *   - Left out: refresh-token rotation, code single-use, DPoP, expiry,
+ *     scopes, the browser, dishonest users, dishonest clients.
+ *   - Checks are written as restrictions on actions (MetaIssuer, IssCheck,
+ *     RefreshAt, AssertionAud) so each flag removes exactly one equality.
+ */
+
+/* ------------------------------------------------------------------ */
+/* Setup                                                              */
+/* ------------------------------------------------------------------ */
+
+// Honest AS: metadata issuer = its own identifier, always sends `iss`.
+rule Setup_Honest_AS:
+    [ ]
+  --[ ASSetup($AS), AS_Honest($AS) ]->
+    [ !HonestAS($AS), !ASMeta($AS, $AS, 'true') ]
+
+// Attacker-run AS: its metadata may claim any issuer $I.
+rule Setup_Dishonest_AS_Iss:
+    [ ]
+  --[ ASSetup($X), AS_Dishonest($X) ]->
+    [ !DishonestAS($X), !ASMeta($X, $I, 'true') ]
+
+rule Setup_Dishonest_AS_NoIss:
+    [ ]
+  --[ ASSetup($X), AS_Dishonest($X) ]->
+    [ !DishonestAS($X), !ASMeta($X, $I, 'false') ]
+
+rule Setup_Honest_RS:
+    [ !HonestAS($AS) ]
+  --[ RSSetup($RS), RS_Honest($RS) ]->
+    [ !HonestRS($RS), !PRM($RS, $AS) ]
+
+rule Setup_Dishonest_RS:
+    [ ]
+  --[ RSSetup($X), RS_Dishonest($X) ]->
+    [ !DishonestRS($X) ]
+
+#ifdef PUBLIC
+// Public CIMD client (token_endpoint_auth_method "none").
+rule Setup_Client:
+    [ ]
+  --[ ClientSetup($C) ]->
+    [ !Client($C) ]
+#else
+// Confidential CIMD client: one signing key, published in its metadata
+// document (jwks), used at every AS.
+rule Setup_Client:
+    [ Fr(~sk) ]
+  --[ ClientSetup($C), ClientKeyCreated($C, ~sk) ]->
+    [ !Client($C), !ClientKey($C, ~sk), !CIMD($C, pk(~sk)), Out(pk(~sk)) ]
+#endif
+
+restriction as_set_up_once:
+  "All x #i #j. ASSetup(x) @ #i & ASSetup(x) @ #j ==> #i = #j"
+
+restriction rs_set_up_once:
+  "All x #i #j. RSSetup(x) @ #i & RSSetup(x) @ #j ==> #i = #j"
+
+restriction client_set_up_once:
+  "All x #i #j. ClientSetup(x) @ #i & ClientSetup(x) @ #j ==> #i = #j"
+
+/* ------------------------------------------------------------------ */
+/* The checks (each flag removes one)                                 */
+/* ------------------------------------------------------------------ */
+
+// (Tamarin's preprocessor has no #ifndef, hence the empty #ifdef branches.)
+
+#ifdef NO_META_CHECK
+#else
+// RFC 8414 §3.3: the metadata `issuer` must be the AS the client discovered.
+restriction metadata_issuer_validated:
+  "All a i #t. MetaIssuer(a, i) @ #t ==> a = i"
+#endif
+
+#ifdef NO_ISS
+#else
+// RFC 9207 §2.4: `iss` must equal the recorded issuer.
+restriction iss_checked:
+  "All rec got #t. IssCheck(rec, got) @ #t ==> rec = got"
+#endif
+
+#ifdef RT_UNBOUND
+#else
+// A refresh token is only sent to the issuer it was obtained from.
+restriction refresh_token_bound_to_issuer:
+  "All i j #t. RefreshAt(i, j) @ #t ==> i = j"
+#endif
+
+#ifdef AS_NO_ASSERTION_AUD
+#else
+// The AS only accepts a client assertion whose `aud` is its own issuer.
+restriction assertion_audience_checked:
+  "All as aud #t. AssertionAud(as, aud) @ #t ==> as = aud"
+#endif
+
+/* ------------------------------------------------------------------ */
+/* Client: discovery and authorization request                        */
+/* ------------------------------------------------------------------ */
+
+rule Client_Start_Honest_RS:
+    [ !Client($C), !PRM($RS, $AS), !ASMeta($AS, $I, issSup), Fr(~sid), Fr(~ver) ]
+  --[ ClientStart(~sid, $C, $RS, $AS), MetaIssuer($AS, $I) ]->
+    [ St_Client_1(~sid, $C, $RS, $AS, $I, issSup, ~ver)
+    , Out(<'authz_request', $AS, $C, h(~ver), $RS>) ]
+
+// A malicious MCP server names any AS in its protected resource metadata.
+rule Client_Start_Dishonest_RS:
+    [ !Client($C), !DishonestRS($RS), In(<'prm', $RS, $AS>)
+    , !ASMeta($AS, $I, issSup), Fr(~sid), Fr(~ver) ]
+  --[ ClientStart(~sid, $C, $RS, $AS), MetaIssuer($AS, $I) ]->
+    [ St_Client_1(~sid, $C, $RS, $AS, $I, issSup, ~ver)
+    , Out(<'authz_request', $AS, $C, h(~ver), $RS>) ]
+
+/* ------------------------------------------------------------------ */
+/* Honest AS: authorization endpoint                                  */
+/* ------------------------------------------------------------------ */
+
+rule AS_Authorize:
+    [ In(<'authz_request', $AS, $C, challenge, $RS>)
+    , !HonestAS($AS), !Client($C), Fr(~code) ]
+  --[ Consent($U, $C, $RS, $AS), CodeIssued(cd(~code)) ]->
+    [ !Code($AS, cd(~code), $U, $C, challenge, $RS)
+    , ToClient($C, <'authz_response', cd(~code), $AS>) ]
+
+rule Attacker_Callback_Iss:
+    [ In(<'authz_response', cd(code), $iss>) ]
+  -->
+    [ ToClient($C, <'authz_response', cd(code), $iss>) ]
+
+rule Attacker_Callback_NoIss:
+    [ In(<'authz_response_noiss', cd(code)>) ]
+  -->
+    [ ToClient($C, <'authz_response_noiss', cd(code)>) ]
+
+/* ------------------------------------------------------------------ */
+/* Client: callback and token request                                 */
+/* ------------------------------------------------------------------ */
+
+rule Client_Callback_Iss:
+    [ St_Client_1(~sid, $C, $RS, $AS, $I, issSup, ~ver)
+    , ToClient($C, <'authz_response', cd(code), $iss>) ]
+  --[ IssCheck($I, $iss) ]->
+    [ St_Client_Code(~sid, $C, $RS, $AS, $I, ~ver, cd(code)) ]
+
+// `iss` absent: proceed only if the recorded metadata does not advertise it.
+rule Client_Callback_NoIss:
+    [ St_Client_1(~sid, $C, $RS, $AS, $I, 'false', ~ver)
+    , ToClient($C, <'authz_response_noiss', cd(code)>) ]
+  -->
+    [ St_Client_Code(~sid, $C, $RS, $AS, $I, ~ver, cd(code)) ]
+
+#ifdef PUBLIC
+
+rule Client_Token_Request:
+    [ St_Client_Code(~sid, $C, $RS, $AS, $I, ~ver, cd(code)) ]
+  --[ ClientRedeems(~sid, $C, $AS, cd(code)) ]->
+    [ St_Client_2(~sid, $C, $RS, $AS, $I)
+    , ToAS($AS, ~sid, <'token_request', $C, cd(code), ~ver, $RS, 'none'>) ]
+
+#else
+
+// private_key_jwt: the assertion's `aud` is the RECORDED issuer.
+rule Client_Token_Request:
+    [ St_Client_Code(~sid, $C, $RS, $AS, $I, ~ver, cd(code))
+    , !ClientKey($C, ~sk), Fr(~jti) ]
+  --[ ClientRedeems(~sid, $C, $AS, cd(code)) ]->
+    [ St_Client_2(~sid, $C, $RS, $AS, $I)
+    , ToAS($AS, ~sid, <'token_request', $C, cd(code), ~ver, $RS,
+                       sign(<'cassert', $C, $I, ~jti>, ~sk)>) ]
+
+#endif
+
+/* ------------------------------------------------------------------ */
+/* Honest AS: token endpoint (authorization_code grant)               */
+/* ------------------------------------------------------------------ */
+
+#ifdef PUBLIC
+
+rule AS_Token:
+    [ ToAS($AS, ~sid, <'token_request', $C, cd(~code), ~ver, $RS, 'none'>)
+    , !HonestAS($AS)
+    , !Code($AS, cd(~code), $U, $C, h(~ver), $RS)
+    , Fr(~tok), Fr(~r) ]
+  --[ TokenIssued(at(~tok), $AS, $U, $RS)
+    , RTIssued(rt(~r), $AS, $U, $C, $RS) ]->
+    [ !Token(at(~tok), $AS, $U, $RS)
+    , !Refresh(rt(~r), $AS, $U, $C, $RS)
+    , FromAS(~sid, <'token_response', at(~tok), rt(~r)>) ]
+
+rule AS_Token_From_Network:
+    [ In(<'token_request', $C, cd(~code), ver, $RS, 'none'>)
+    , !HonestAS($AS)
+    , !Code($AS, cd(~code), $U, $C, h(ver), $RS)
+    , Fr(~tok), Fr(~r) ]
+  --[ TokenIssued(at(~tok), $AS, $U, $RS)
+    , RTIssued(rt(~r), $AS, $U, $C, $RS) ]->
+    [ !Token(at(~tok), $AS, $U, $RS)
+    , !Refresh(rt(~r), $AS, $U, $C, $RS)
+    , Out(<at(~tok), rt(~r)>) ]
+
+#else
+
+rule AS_Token:
+    [ ToAS($AS, ~sid, <'token_request', $C, cd(~code), ~ver, $RS,
+                       sign(<'cassert', $C, aud, jti>, ~sk)>)
+    , !HonestAS($AS), !CIMD($C, pk(~sk))
+    , !Code($AS, cd(~code), $U, $C, h(~ver), $RS)
+    , Fr(~tok), Fr(~r) ]
+  --[ AssertionAud($AS, aud)
+    , TokenIssued(at(~tok), $AS, $U, $RS)
+    , RTIssued(rt(~r), $AS, $U, $C, $RS) ]->
+    [ !Token(at(~tok), $AS, $U, $RS)
+    , !Refresh(rt(~r), $AS, $U, $C, $RS)
+    , FromAS(~sid, <'token_response', at(~tok), rt(~r)>) ]
+
+rule AS_Token_From_Network:
+    [ In(<'token_request', $C, cd(~code), ver, $RS,
+          sign(<'cassert', $C, aud, jti>, ~sk)>)
+    , !HonestAS($AS), !CIMD($C, pk(~sk))
+    , !Code($AS, cd(~code), $U, $C, h(ver), $RS)
+    , Fr(~tok), Fr(~r) ]
+  --[ AssertionAud($AS, aud)
+    , TokenIssued(at(~tok), $AS, $U, $RS)
+    , RTIssued(rt(~r), $AS, $U, $C, $RS) ]->
+    [ !Token(at(~tok), $AS, $U, $RS)
+    , !Refresh(rt(~r), $AS, $U, $C, $RS)
+    , Out(<at(~tok), rt(~r)>) ]
+
+#endif
+
+// An attacker-run AS leaks every request and can answer on that connection.
+rule Dishonest_AS_Leaks:
+    [ ToAS($X, ~sid, m), !DishonestAS($X) ]
+  --[ LeakedToAS($X) ]->
+    [ Out(<~sid, m>) ]
+
+rule Dishonest_AS_Answers:
+    [ In(<~cid, 'token_response', at(tok), rt(r)>) ]
+  -->
+    [ FromAS(~cid, <'token_response', at(tok), rt(r)>) ]
+
+/* ------------------------------------------------------------------ */
+/* Client uses the token and stores the refresh token                 */
+/* ------------------------------------------------------------------ */
+
+rule Client_Use_Token:
+    [ St_Client_2(~sid, $C, $RS, $AS, $I)
+    , FromAS(~sid, <'token_response', at(tok), rt(r)>) ]
+  --[ ClientUsesToken(~sid, $C, $RS, at(tok))
+    , ClientStoresRT(~sid, $C, rt(r)) ]->
+    [ ToRS($RS, <'bearer', at(tok)>)
+    , St_Client_RT($C, $AS, $I, $RS, rt(r)) ]
+
+/* ------------------------------------------------------------------ */
+/* Refresh                                                            */
+/* ------------------------------------------------------------------ */
+
+// Later the client needs a token again and sends its stored refresh token
+// to an AS: the one the current MCP server's metadata names ($AS2, whose
+// metadata claims issuer $I2). Fixed: only if $I2 is the issuer the refresh
+// token was recorded under (RefreshAt restriction).
+#ifdef PUBLIC
+
+rule Client_Refresh:
+    [ St_Client_RT($C, $AS, $I, $RS, rt(r))
+    , !ASMeta($AS2, $I2, iss2), Fr(~sid2) ]
+  --[ MetaIssuer($AS2, $I2), RefreshAt($I, $I2)
+    , ClientRefreshes($C, $AS2, rt(r)) ]->
+    [ ToAS($AS2, ~sid2, <'refresh_request', $C, rt(r), 'none'>) ]
+
+rule AS_Refresh:
+    [ ToAS($AS, ~sid, <'refresh_request', $C, rt(~r), 'none'>)
+    , !HonestAS($AS), !Refresh(rt(~r), $AS, $U, $C, $RS), Fr(~tok) ]
+  --[ TokenIssued(at(~tok), $AS, $U, $RS), RefreshAccepted($AS, $U, $C, $RS) ]->
+    [ !Token(at(~tok), $AS, $U, $RS)
+    , FromAS(~sid, <'refresh_response', at(~tok)>) ]
+
+rule AS_Refresh_From_Network:
+    [ In(<'refresh_request', $C, rt(~r), 'none'>)
+    , !HonestAS($AS), !Refresh(rt(~r), $AS, $U, $C, $RS), Fr(~tok) ]
+  --[ TokenIssued(at(~tok), $AS, $U, $RS), RefreshAccepted($AS, $U, $C, $RS) ]->
+    [ !Token(at(~tok), $AS, $U, $RS)
+    , Out(at(~tok)) ]
+
+#else
+
+rule Client_Refresh:
+    [ St_Client_RT($C, $AS, $I, $RS, rt(r))
+    , !ASMeta($AS2, $I2, iss2), !ClientKey($C, ~sk), Fr(~sid2), Fr(~jti) ]
+  --[ MetaIssuer($AS2, $I2), RefreshAt($I, $I2)
+    , ClientRefreshes($C, $AS2, rt(r)) ]->
+    [ ToAS($AS2, ~sid2, <'refresh_request', $C, rt(r),
+                         sign(<'cassert', $C, $I2, ~jti>, ~sk)>) ]
+
+rule AS_Refresh:
+    [ ToAS($AS, ~sid, <'refresh_request', $C, rt(~r),
+                       sign(<'cassert', $C, aud, jti>, ~sk)>)
+    , !HonestAS($AS), !CIMD($C, pk(~sk))
+    , !Refresh(rt(~r), $AS, $U, $C, $RS), Fr(~tok) ]
+  --[ AssertionAud($AS, aud)
+    , TokenIssued(at(~tok), $AS, $U, $RS), RefreshAccepted($AS, $U, $C, $RS) ]->
+    [ !Token(at(~tok), $AS, $U, $RS)
+    , FromAS(~sid, <'refresh_response', at(~tok)>) ]
+
+rule AS_Refresh_From_Network:
+    [ In(<'refresh_request', $C, rt(~r), sign(<'cassert', $C, aud, jti>, ~sk)>)
+    , !HonestAS($AS), !CIMD($C, pk(~sk))
+    , !Refresh(rt(~r), $AS, $U, $C, $RS), Fr(~tok) ]
+  --[ AssertionAud($AS, aud)
+    , TokenIssued(at(~tok), $AS, $U, $RS), RefreshAccepted($AS, $U, $C, $RS) ]->
+    [ !Token(at(~tok), $AS, $U, $RS)
+    , Out(at(~tok)) ]
+
+#endif
+
+/* ------------------------------------------------------------------ */
+/* MCP server validates the token (audience always checked here)      */
+/* ------------------------------------------------------------------ */
+
+rule Attacker_To_RS:
+    [ In(<'bearer', at(tok)>), !HonestRS($RS) ]
+  -->
+    [ ToRS($RS, <'bearer', at(tok)>) ]
+
+rule RS_Accepts:
+    [ ToRS($RS, <'bearer', at(~tok)>), !HonestRS($RS)
+    , !Token(at(~tok), $AS, $U, $RS) ]
+  --[ RSAccepts($RS, $U, $RS, at(~tok)) ]->
+    [ ]
+
+rule Dishonest_RS_Leaks:
+    [ ToRS($X, m), !DishonestRS($X) ]
+  --[ LeakedToRS($X) ]->
+    [ Out(m) ]
+
+/* ------------------------------------------------------------------ */
+/* Lemmas                                                             */
+/* ------------------------------------------------------------------ */
+
+#ifdef PUBLIC
+#else
+// Helper (reused by later lemmas): an honest client's signing key never
+// leaks, so the attacker can only replay assertions, never forge them.
+lemma client_key_secret [reuse]:
+  "All c sk #i. ClientKeyCreated(c, sk) @ #i ==> not (Ex #j. K(sk) @ #j)"
+#endif
+
+lemma code_sources [sources]:
+  "All sid c as code #i.
+     ClientRedeems(sid, c, as, code) @ #i
+     ==> (Ex #j. CodeIssued(code) @ #j & #j < #i)
+       | (Ex #j. KU(code) @ #j & #j < #i)"
+
+lemma token_sources [sources]:
+  "All sid c rs tok #i.
+     ClientUsesToken(sid, c, rs, tok) @ #i
+     ==> (Ex as u aud #j. TokenIssued(tok, as, u, aud) @ #j & #j < #i)
+       | (Ex #j. KU(tok) @ #j & #j < #i)"
+
+lemma rt_sources [sources]:
+  "All sid c r #i.
+     ClientStoresRT(sid, c, r) @ #i
+     ==> (Ex as u c2 rs #j. RTIssued(r, as, u, c2, rs) @ #j & #j < #i)
+       | (Ex #j. KU(r) @ #j & #j < #i)"
+
+// Sanity: a fully honest run reaches an honest MCP server ...
+lemma executable:
+  exists-trace
+  "Ex rs u t #i. RSAccepts(rs, u, rs, t) @ #i
+     & not (Ex x #j. AS_Dishonest(x) @ #j)
+     & not (Ex x #j. RS_Dishonest(x) @ #j)"
+
+// ... and an honest refresh works.
+lemma executable_refresh:
+  exists-trace
+  "Ex as u c rs #i. RefreshAccepted(as, u, c, rs) @ #i
+     & not (Ex x #j. AS_Dishonest(x) @ #j)
+     & not (Ex x #j. RS_Dishonest(x) @ #j)"
+
+// P2
+lemma rs_accepts_only_consented:
+  "All rs u aud t #i.
+     RSAccepts(rs, u, aud, t) @ #i
+     ==> Ex c as #j. Consent(u, c, rs, as) @ #j"
+
+// P3 / P4. For the confidential client under NO_META_CHECK the all-traces
+// versions do not terminate, so that one variant states the attack as an
+// exists-trace lemma instead. (No nested #ifdef in Tamarin, hence the
+// computed flag ALLTRACES_SECRECY.)
+#ifdef PUBLIC
+#define ALLTRACES_SECRECY
+#endif
+#ifdef NO_META_CHECK
+#else
+#define ALLTRACES_SECRECY
+#endif
+
+#ifdef ALLTRACES_SECRECY
+
+lemma token_secrecy:
+  "All t as u rs #i.
+     TokenIssued(t, as, u, rs) @ #i
+     & not (Ex #j. RS_Dishonest(rs) @ #j)
+     ==> not (Ex #k. K(t) @ #k)"
+
+lemma refresh_token_secrecy:
+  "All r as u c rs #i.
+     RTIssued(r, as, u, c, rs) @ #i
+     & not (Ex #j. RS_Dishonest(rs) @ #j)
+     ==> not (Ex #k. K(r) @ #k)"
+
+#else
+
+// Confidential client, NO_META_CHECK: the all-traces secrecy lemmas do not
+// terminate. The attack is stated instead as the existence of
+// a trace violating P3 / P4. Finding such a trace is the same result as
+// falsifying the all-traces lemma. token_secrecy_attack asks for the token
+// to come from a refresh (RefreshAccepted at the same step): a narrower
+// statement that guides the search; any such trace also violates P3.
+lemma token_secrecy_attack:
+  exists-trace
+  "Ex t as u c rs #i #k.
+     TokenIssued(t, as, u, rs) @ #i
+     & RefreshAccepted(as, u, c, rs) @ #i
+     & not (Ex #j. RS_Dishonest(rs) @ #j)
+     & K(t) @ #k"
+
+lemma refresh_token_secrecy_attack:
+  exists-trace
+  "Ex r as u c rs #i #k.
+     RTIssued(r, as, u, c, rs) @ #i
+     & not (Ex #j. RS_Dishonest(rs) @ #j)
+     & K(r) @ #k"
+
+#endif
+
+end
