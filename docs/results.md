@@ -25,6 +25,8 @@
 | 02 | fixed | rs_accepts_only_consented | verified | ✅ verified (30 steps) | audience checked |
 | 02 | fixed | token_secrecy | verified | ✅ verified (19 steps) | `iss` always sent and checked |
 
+*Note on lemma count: The 29 individual expectations checked by `scripts/prove.sh` comprise: 4 for Model 01 (2 lemmas × 2 variants) + 25 for Model 02 (5 lemmas × 5 variants: `code_sources`, `token_sources`, `executable`, `rs_accepts_only_consented`, `token_secrecy`).*
+
 ## Findings and open questions
 
 None of these is a new vulnerability. Each one is the model **rediscovering a published, already-fixed bug or a known attack class** when the relevant check is removed, which shows the abstraction is fine-grained enough to see real bugs.
