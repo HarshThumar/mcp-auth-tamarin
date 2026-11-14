@@ -25,8 +25,10 @@ Classic formal analyses of OAuth do not cover this exact setup. Real bugs show i
 | 03 | [`03_cimd_client_binding.spthy`](models/03_cimd_client_binding.spthy) | One CIMD client identity at many ASes: which checks (metadata `issuer`, `iss`, refresh-token binding, assertion `aud`) keep codes, tokens and refresh tokens bound to their AS? | confidential / `PUBLIC` × `NO_META_CHECK` / `NO_ISS` / `RT_UNBOUND` / `AS_NO_ASSERTION_AUD` | ✅ fixed verified for both client types; attacks in weakened variants (CI) |
 | 04 | [`04_id_jag.spthy`](models/04_id_jag.spthy) | Enterprise-Managed Authorization (ID-JAG): RFC 8693 at the IdP + RFC 7523 at the MCP AS | `NO_IDJAG_AUD` / `NO_CLIENT_BINDING` / both / `NO_RESOURCE_CLAIM` / fixed | ✅ fixed verified; replay needs both RAS checks off (CI) |
 | 06 | [`06_audience_injection.spthy`](models/06_audience_injection.spthy) | Audience injection against a CIMD client (one key at every AS): does an assertion sent to one AS stay useless at another? | `AUD_TOKEN_ENDPOINT` / `AS_LENIENT` / `NO_META_CHECK` / fixed | ✅ attack with token-endpoint `aud`; fixed by `aud` = validated issuer, even if the AS stays lenient (CI) |
+| 07 | [`07_confused_deputy_proxy.spthy`](models/07_confused_deputy_proxy.spthy) | Confused deputy at an MCP proxy server with a static third-party client ID: does the proxy only issue tokens to clients the user approved? | `CONSENT_NOT_CLIENT_BOUND` / `NO_REDIRECT_CHECK` / fixed | ✅ each mitigation in the MCP Security Best Practices stops one attack; both together verified (CI) |
+| 05 | [`05_agent_payment_mandate.spthy`](models/05_agent_payment_mandate.spthy) | Case study: an AI agent pays under a UPI-style mandate. Does every debit stay inside what the principal approved? | `NO_CONSENT_BINDING` / `NO_PAYEE_CHECK` / `NO_AMOUNT_CHECK` / `NO_AUD` / `NO_SENDER_CONSTRAINT` / `NO_REVOCATION_CHECK` / fixed | ✅ every check needed for exactly the property it protects (CI); see [case study](docs/case-study-upi.md) |
 
-Model 05 is reserved for a planned payment-mandate case study.
+Which checks each property needs, for every combination of removed checks: [docs/ablation.md](docs/ablation.md).
 
 Results are tracked in [docs/results.md](docs/results.md). Each modelling choice is listed in [docs/threat-model.md](docs/threat-model.md).
 

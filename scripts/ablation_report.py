@@ -31,7 +31,9 @@ PROP_NO = {  # global property numbers (docs/flow.md §3)
     "rs_accepts_only_authorized": "P2", "rs_accepts_only_requested": "P2'",
     "token_secrecy": "P3", "refresh_token_secrecy": "P4",
     "ras_grant_agreement": "P5", "session_integrity": "P6",
-    "client_authentication": "P7",
+    "client_authentication": "P7", "token_only_to_consented_client": "P8",
+    "debit_within_intent": "P10", "no_debit_after_revocation": "P11",
+    "debit_requested_by_agent": "P12",
 }
 CHECK_NAME = {  # flag -> the check it removes (ubiquitous language)
     "NO_BINDING": "issuer binding", "UNVALIDATED_ISSUER": "metadata issuer check",
@@ -42,6 +44,10 @@ CHECK_NAME = {  # flag -> the check it removes (ubiquitous language)
     "NO_IDJAG_AUD": "RAS checks ID-JAG `aud`", "NO_CLIENT_BINDING": "RAS checks ID-JAG `client_id`",
     "NO_RESOURCE_CLAIM": "`resource` in ID-JAG",
     "AUD_TOKEN_ENDPOINT": "client: `aud` = issuer", "AS_LENIENT": "AS: `aud` = issuer only",
+    "NO_CONSENT_BINDING": "principal's approval", "NO_PAYEE_CHECK": "payee check",
+    "NO_AMOUNT_CHECK": "amount cap check", "NO_SENDER_CONSTRAINT": "proof of possession",
+    "NO_REVOCATION_CHECK": "revocation check",
+    "CONSENT_NOT_CLIENT_BOUND": "per-client consent",
 }
 SHORT = {  # flag -> short symbol for formulas
     "NO_BINDING": "BIND", "UNVALIDATED_ISSUER": "META", "NO_AUD": "AUD", "NO_ISS": "ISS",
@@ -49,6 +55,9 @@ SHORT = {  # flag -> short symbol for formulas
     "NO_META_CHECK": "META", "RT_UNBOUND": "RTBIND", "AS_NO_ASSERTION_AUD": "ASAUD",
     "NO_IDJAG_AUD": "JAGAUD", "NO_CLIENT_BINDING": "JAGCID", "NO_RESOURCE_CLAIM": "JAGRES",
     "AUD_TOKEN_ENDPOINT": "CAUD", "AS_LENIENT": "ASAUD",
+    "NO_CONSENT_BINDING": "CONSENT", "NO_PAYEE_CHECK": "PAYEE", "NO_AMOUNT_CHECK": "AMOUNT",
+    "NO_SENDER_CONSTRAINT": "POP", "NO_REVOCATION_CHECK": "REVOKE",
+    "CONSENT_NOT_CLIENT_BOUND": "CCONSENT",
 }
 FAILS = {"F", "A"}
 

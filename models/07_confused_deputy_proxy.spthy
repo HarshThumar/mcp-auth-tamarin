@@ -1,0 +1,205 @@
+theory MCP_Confused_Deputy_Proxy
+begin
+
+builtins: hashing
+
+/*
+ * Model 07: the confused-deputy attack on an MCP proxy server.
+ *
+ * Spec pinned: MCP Security Best Practices, draft as of 14 Nov 2026,
+ *   "Confused Deputy Problem", and authorization/security-considerations
+ *   "Confused Deputy Problem":
+ *   - "MCP proxy servers using static client IDs MUST obtain user consent for
+ *     each dynamically registered client before forwarding to third-party
+ *     authorization servers";
+ *   - consent cookies MUST "Bind to the specific client_id (not just 'user
+ *     has consented')";
+ *   - the proxy MUST validate that `redirect_uri` "exactly matches the
+ *     registered URI".
+ *
+ * Setting
+ *   An MCP proxy server is the MCP authorization server for its MCP clients
+ *   (dynamic client registration, PKCE) and a single OAuth client, with one
+ *   static client ID, to a third-party API's AS. That third-party AS has
+ *   already set a consent cookie for the user and that static client ID, so
+ *   it never shows a consent screen again (worst case, as in the spec's
+ *   "Vulnerable Conditions"). Anyone, including the attacker, can register an
+ *   MCP client at the proxy, with any redirect URI. The attacker can make an
+ *   honest user's browser open any authorization request (a link the user
+ *   clicks).
+ *
+ * Properties (global numbering, docs/flow.md §3)
+ *   P8 token_only_to_consented_client: the proxy issues an MCP token for an
+ *      honest user to a client only if that user approved that client.
+ *   P3 token_secrecy: an MCP token for an honest user and an honest client
+ *      never reaches the attacker.
+ *
+ * Checks (one flag removes one check)
+ *   CONSENT_NOT_CLIENT_BOUND  the proxy's consent record says only "this user
+ *                             has consented" (to some client), not which one
+ *   NO_REDIRECT_CHECK         the proxy does not require the request's
+ *                             redirect URI to be the client's registered one
+ *
+ * Abstraction (docs/threat-model.md)
+ *   - The third-party leg is collapsed into one silent step (cookie present):
+ *     the proxy always gets a third-party token for the user. Its secrecy is
+ *     not a property here.
+ *   - The user's browser talks to the proxy over TLS with the user's session
+ *     (private fact Browser). A redirect to an honest client's redirect URI
+ *     reaches that client privately; one to an attacker-run endpoint is
+ *     public.
+ *   - An honest user approves (on the proxy's consent screen, which shows the
+ *     client's name and registered redirect URI) only clients it uses itself.
+ *   - Honest clients are public clients with PKCE (S256 as a hash); codes are
+ *     single-use.
+ */
+
+/* ------------------------------------------------------------------ */
+/* Setup                                                              */
+/* ------------------------------------------------------------------ */
+
+rule Setup_User:
+    [ ]
+  --[ UserSetup($U) ]->
+    [ !User($U) ]
+
+rule Honest_Redirect_Endpoint:
+    [ ]
+  --[ Redirect($R), Redirect_Honest($R) ]->
+    [ !HonestRedirect($R) ]
+
+rule Attacker_Redirect_Endpoint:
+    [ ]
+  --[ Redirect($R), Redirect_Dishonest($R) ]->
+    [ !AttackerRedirect($R) ]
+
+restriction redirect_once:
+  "All r #i #j. Redirect(r) @ #i & Redirect(r) @ #j ==> #i = #j"
+
+// Dynamic client registration at the proxy: an honest client registers its
+// own redirect URI.
+rule DCR_Honest_Client:
+    [ !HonestRedirect($R), Fr(~cid) ]
+  --[ Client_Honest(~cid), ClientRegistered(~cid, $R) ]->
+    [ !Client(~cid, $R), !HonestClient(~cid, $R), Out(~cid) ]
+
+// The attacker registers its own client with any redirect URI.
+rule DCR_Attacker_Client:
+    [ In(r), Fr(~cid) ]
+  --[ Client_Dishonest(~cid), ClientRegistered(~cid, r) ]->
+    [ !Client(~cid, r), Out(~cid) ]
+
+restriction equality:
+  "All x y #t. Eq(x, y) @ #t ==> x = y"
+
+/* ------------------------------------------------------------------ */
+/* The checks                                                         */
+/* ------------------------------------------------------------------ */
+
+#ifdef CONSENT_NOT_CLIENT_BOUND
+// "user has consented": some approval by this user exists.
+restriction consent_checked:
+  "All u c #t. ConsentCheck(u, c) @ #t ==> Ex c2 #j. UserApproves(u, c2) @ #j & #j < #t"
+#else
+// Per-client consent: this user approved this client.
+restriction consent_checked:
+  "All u c #t. ConsentCheck(u, c) @ #t ==> Ex #j. UserApproves(u, c) @ #j & #j < #t"
+#endif
+
+#ifdef NO_REDIRECT_CHECK
+#else
+restriction redirect_uri_exact:
+  "All r reg #t. RedirectCheck(r, reg) @ #t ==> r = reg"
+#endif
+
+/* ------------------------------------------------------------------ */
+/* User and honest client                                             */
+/* ------------------------------------------------------------------ */
+
+// An honest user uses an honest client and approves it at the proxy's consent
+// screen.
+rule User_Approves_Client:
+    [ !User($U), !HonestClient(cid, $R) ]
+  --[ UserApproves($U, cid) ]->
+    [ !Uses($U, cid) ]
+
+// The honest client starts a flow for its user (PKCE).
+rule Client_Start:
+    [ !Uses($U, cid), !HonestClient(cid, $R), Fr(~st), Fr(~v) ]
+  -->
+    [ St_Client(cid, $U, $R, ~st, ~v)
+    , Browser($U, <'authz', cid, $R, ~st, h(~v)>) ]
+
+// The attacker gets an honest user's browser to open any authorization
+// request (the user clicks a link).
+rule User_Clicks_Link:
+    [ !User($U), In(<'authz', cid, r, st, ch>) ]
+  --[ LinkClicked($U, cid, r) ]->
+    [ Browser($U, <'authz', cid, r, st, ch>) ]
+
+/* ------------------------------------------------------------------ */
+/* Proxy (MCP AS) with a silent third-party AS behind it               */
+/* ------------------------------------------------------------------ */
+
+rule Proxy_Authorize:
+    [ Browser($U, <'authz', cid, r, st, ch>), !Client(cid, reg), Fr(~code) ]
+  --[ RedirectCheck(r, reg), ConsentCheck($U, cid)
+    , ThirdPartySilentConsent($U)
+    , CodeIssued(~code, $U, cid, r) ]->
+    [ Code(~code, $U, cid, ch), CodeTo(r, <~code, st>) ]
+
+rule Deliver_To_Honest_Client:
+    [ CodeTo(r, m), !HonestRedirect(r) ]
+  -->
+    [ AtRedirect(r, m) ]
+
+rule Deliver_To_Attacker:
+    [ CodeTo(r, m), !AttackerRedirect(r) ]
+  -->
+    [ Out(m) ]
+
+// The honest client redeems its code (TLS).
+rule Client_Redeem:
+    [ St_Client(cid, $U, $R, ~st, ~v), AtRedirect($R, <code, ~st>) ]
+  -->
+    [ St_Client_Wait(cid, $U, ~st), ToProxy(~st, <'token', code, cid, ~v>) ]
+
+rule Proxy_Token_Honest_Client:
+    [ ToProxy(sid, <'token', code, cid, v>), Code(code, u, cid, ch), Fr(~at) ]
+  --[ Eq(h(v), ch), MCPTokenIssued(u, cid, ~at) ]->
+    [ FromProxy(sid, ~at) ]
+
+// Anyone can call the token endpoint (public clients).
+rule Proxy_Token_Network:
+    [ In(<'token', code, cid, v>), Code(code, u, cid, ch), Fr(~at) ]
+  --[ Eq(h(v), ch), MCPTokenIssued(u, cid, ~at) ]->
+    [ Out(~at) ]
+
+rule Client_Done:
+    [ St_Client_Wait(cid, $U, ~st), FromProxy(~st, at) ]
+  --[ ClientGotToken($U, cid, at) ]->
+    [ ]
+
+/* ------------------------------------------------------------------ */
+/* Lemmas                                                             */
+/* ------------------------------------------------------------------ */
+
+// Sanity: an honest user's honest client gets a token, no attacker link.
+lemma executable:
+  exists-trace
+  "Ex u c at #i. ClientGotToken(u, c, at) @ #i
+     & not (Ex x r #k. LinkClicked(x, c, r) @ #k)"
+
+// P8: the proxy issues a token for an honest user to a client only if that
+// user approved that client.
+lemma token_only_to_consented_client:
+  "All u c at #i. MCPTokenIssued(u, c, at) @ #i
+     ==> Ex #j. UserApproves(u, c) @ #j & #j < #i"
+
+// P3: a token for an honest user and an honest client stays secret.
+lemma token_secrecy:
+  "All u c at #i. MCPTokenIssued(u, c, at) @ #i
+     & (Ex #k. Client_Honest(c) @ #k)
+     ==> not (Ex #j. K(at) @ #j)"
+
+end

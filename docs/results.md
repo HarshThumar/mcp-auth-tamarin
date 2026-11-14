@@ -1,6 +1,6 @@
 # Results
 
-*All models last checked 14 Nov 2026 with Tamarin 1.12.0 and Maude 3.5.1 (local WSL run; CI runs the same script).* `scripts/prove.sh` (and CI) checks every expectation automatically: **225/225 pass** (91 security-property results, 134 helper or sanity lemmas), with no well-formedness warnings, in about 40 minutes locally with `JOBS=4`. The full Tamarin output is saved in `results/` and uploaded as a CI artifact. Property numbers (P1–P6) are the same in every model; see [flow.md](flow.md) §3.
+*All models last checked 14 Nov 2026 with Tamarin 1.12.0 and Maude 3.5.1 (local WSL run; CI runs the same script).* `scripts/prove.sh` (and CI) checks every expectation automatically: **225/225 pass** (91 security-property results, 134 helper or sanity lemmas), with no well-formedness warnings, in about 40 minutes locally with `JOBS=4`. The full Tamarin output is saved in `results/` and uploaded as a CI artifact. Property numbers (P1–P12) are the same in every model; see [flow.md](flow.md) §3.
 
 ### Model 01: credential binding (revised 14 Nov 2026)
 
@@ -69,9 +69,35 @@ P7 = `client_authentication`, P3 = `token_secrecy` (a client-credentials token f
 | Variant | P7 | P3 | Attack shape | Write-up |
 |---|---|---|---|---|
 | fixed (`aud` = validated issuer; AS accepts only its issuer) | ✅ (13) | ✅ (13) | no trace (13) | |
-| `AUD_TOKEN_ENDPOINT` (client: `aud` = metadata token endpoint; AS accepts it) | ❌ falsified (9) | ❌ falsified (10) | trace found (12) | R12 |
+| `AUD_TOKEN_ENDPOINT` + `AS_LENIENT` (client: `aud` = metadata token endpoint; AS accepts it) | ❌ falsified (9) | ❌ falsified (10) | trace found (12) | R12 |
+| `AUD_TOKEN_ENDPOINT` alone (client sends the token-endpoint `aud`, AS accepts only its issuer) | ✅ (9) | ✅ (8) | no trace (12) | **vacuous**: `executable` fails, the honest client can no longer authenticate (one flag = one check, see [ablation.md](ablation.md)) |
 | `AS_LENIENT` (fixed client; AS accepts issuer **or** token endpoint) | ✅ (23) | ✅ (21) | no trace (24) | R12: the client-side fix suffices |
 | `NO_META_CHECK` (fixed `aud` rule, unvalidated metadata issuer) | ❌ falsified (7) | ❌ falsified (8) | trace found (10) | R12 / R8 |
+
+### Model 05: an AI agent pays under a mandate (UPI-style case study, 14 Nov 2026)
+
+P10 = `debit_within_intent`, P11 = `no_debit_after_revocation`, P12 = `debit_requested_by_agent`. `agent_key_secret` and `executable` are verified in every variant. Each flag removes one check; see [case-study-upi.md](case-study-upi.md) for the story and [ablation.md](ablation.md) for every combination.
+
+| Variant (check removed) | P10 | P11 | P12 | Write-up |
+|---|---|---|---|---|
+| fixed (all checks) | ✅ (20) | ✅ (2) | ✅ (36) | |
+| `NO_CONSENT_BINDING` (AS issues without the principal's approval) | ❌ falsified (12) | ✅ | ✅ | R13 |
+| `NO_PAYEE_CHECK` | ❌ falsified (12) | ✅ | ✅ | R13 |
+| `NO_AMOUNT_CHECK` | ❌ falsified (12) | ✅ | ✅ | R13 |
+| `NO_AUD` (payment server does not check the mandate names it) | ❌ falsified (12) | ✅ | ✅ | R13 |
+| `NO_SENDER_CONSTRAINT` (mandate used as a bearer token) | ✅ | ✅ | ❌ falsified (8) | R13 |
+| `NO_REVOCATION_CHECK` | ✅ | ❌ falsified (14) | ✅ | R13 |
+
+### Model 07: confused deputy at an MCP proxy server (14 Nov 2026)
+
+P8 = `token_only_to_consented_client`, P3 = `token_secrecy` (a token for an honest user and an honest client). `executable` is verified in every variant.
+
+| Variant (check removed) | P8 | P3 | Write-up |
+|---|---|---|---|
+| fixed (per-client consent, exact redirect URI) | ✅ (12) | ✅ (24) | |
+| `CONSENT_NOT_CLIENT_BOUND` ("user has consented", to any client) | ❌ falsified (11) | ✅ | R14 |
+| `NO_REDIRECT_CHECK` | ✅ | ❌ falsified (15) | R14 |
+| both | ❌ falsified (11) | ❌ falsified (15) | R14 |
 
 ## Findings and open questions
 
@@ -167,12 +193,23 @@ The variant table shows which checks are needed for which client. For a **public
 - **Is it new?** No. It is the redirect URI manipulation attack of RFC 9700 §4.1.
 
 ### R12 (14 Nov 2026): audience injection works against a CIMD client unless the assertion `aud` is the validated issuer
-- **Model + lemmas:** 06. `-D=AUD_TOKEN_ENDPOINT`: P7 falsified (9 steps), P3 falsified (10 steps). `-D=NO_META_CHECK`: P7 falsified (7), P3 falsified (8). Fixed and `-D=AS_LENIENT`: verified.
+- **Model + lemmas:** 06. `-D=AUD_TOKEN_ENDPOINT -D=AS_LENIENT` (client sends the token-endpoint `aud`, AS accepts it): P7 falsified (9 steps), P3 falsified (10 steps). `-D=NO_META_CHECK`: P7 falsified (7), P3 falsified (8). Fixed and `-D=AS_LENIENT`: verified.
 - **What the specs say:** RFC 7523 §3 lets the assertion `aud` be the AS's token endpoint URL; OIDC Core §9 says it "SHOULD" be. draft-ietf-oauth-rfc7523bis-10 makes the AS issuer the only allowed value. CIMD draft-03 lets a client use `private_key_jwt` with keys from its metadata document, and the same `client_id` and key work at every AS. The MCP draft does not say which `aud` value an MCP client must use.
 - **What the model shows:** a malicious MCP server names an attacker-run AS whose metadata keeps its own issuer and revocation endpoint but lists the **honest** AS's token endpoint. A client that sets `aud` to "the token endpoint URL from the metadata" sends a revocation request (RFC 7009, client-authenticated) to the attacker with an assertion whose `aud` is the honest AS's token endpoint. The attacker replays it at the honest AS's token endpoint in a client-credentials grant and gets a token for the client's own resources. This is the two-phase structure of the paper; the exists-trace lemma `injection_via_revocation` confirms the trace goes through the attacker's revocation endpoint. With `aud` = the validated issuer, the assertion names the attacker's issuer and the honest AS rejects it, **even if that AS still accepts token-endpoint audiences** (`AS_LENIENT`): the client-side fix is sufficient on its own, matching the paper's point that AS-side fixes alone are not (§5). If the client does not validate the metadata issuer (`NO_META_CHECK`), the attacker AS claims the honest issuer and the fixed `aud` rule fails too, the same dependency as R8.
 - **Scope:** the second phase is the client-credentials grant (client impersonation). The paper's other second phases (authorization code via PAR, CIBA, device flow) are not modelled. `jti` replay caches are not modelled; the leaked assertion has never been used at the honest AS, so a cache would not stop it.
 - **Is it new?** No. It is the audience-injection attack class (Hosseyni, Küsters, Würtele, IEEE S&P 2026, ePrint 2025/629) and the rfc7523bis fix. The paper has no formal proof; we couldn't find a machine-checked analysis of the attack or of the fix in the CIMD/MCP setting, where one key at many ASes is the default.
 - **Next step:** spec question for the MCP draft: should it require `aud` = the AS issuer for `private_key_jwt` assertions, referencing rfc7523bis? Candidate conformance test (client side).
+
+### R13 (14 Nov 2026): agent payment mandate (case study): which check stops which loss
+- **Model + lemmas:** 05. Every one of the four "debit inside the intent" checks (principal's approval at the AS, payee, amount cap, payment-server audience) is necessary on its own for P10: removing any one gives a 12-step attack. Proof of possession is needed for P12 only: without it, the attacker takes a leaked payment request and re-submits it with a fresh payment id, so the payment server's one-time payment-id check does not help (8 steps). The online revocation check is needed for P11 only (14 steps).
+- **What the specs say:** draft-mishra-oauth-agent-grants-02 has `aud`, sender-constrained tokens and "no consent substitution" as MUSTs, but no mandate object: payee and amount limits are left to RFC 9396 `authorization_details`, and the resource server checks revocation status only "when the deployment's risk model requires online state". The NPCI UPI Circle delegated-payment rules (per-payment validation, caps, delinking) are known to us only from a secondary summary.
+- **Is it new?** No new attack: each failure is a textbook consequence of dropping that check. What the model adds is the check-by-property table for an agent-payment mandate, machine-checked; we couldn't find prior formal work on UPI-style agent mandates (arXiv 2609.00060 covers x402/MPP/ACP/AP2, not UPI).
+- **Next step:** an honest note to the draft author that revocation-status checking is not required for payment mandates (P11 depends on it); case study write-up.
+
+### R14 (14 Nov 2026): MCP proxy confused deputy: per-client consent and exact redirect URIs protect different things
+- **Model + lemmas:** 07. If the proxy's consent record is not bound to the client (`CONSENT_NOT_CLIENT_BOUND`), an attacker registers its own client, gets the user to click a crafted authorization link, and the proxy issues a token for that user to the attacker's client (P8 falsified, 11 steps). If the proxy does not require the exact registered redirect URI (`NO_REDIRECT_CHECK`), per-client consent does not help: the attacker uses an honest client the user already approved, its own redirect URI and its own PKCE challenge, and gets that honest client's token for the user (P3 falsified, 15 steps). Each check stops one attack; both are needed.
+- **What the specs say:** MCP Security Best Practices, "Confused Deputy Problem": per-client consent MUST, consent cookies bound to the `client_id` "not just 'user has consented'", exact redirect URI matching MUST.
+- **Is it new?** No. It is the attack described in the MCP Security Best Practices, which already prescribes both mitigations. The model is a machine-checked confirmation that each listed mitigation is necessary and that together they suffice in this abstraction (third-party consent cookie always present).
 
 ## Modelling notes
 

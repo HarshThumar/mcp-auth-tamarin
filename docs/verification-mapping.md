@@ -111,6 +111,32 @@ This document provides the Domain-Driven Design (DDD) traceability matrix betwee
 | S6.8 | Client receives token | RFC 6749 §5.1 | `Client_Receives_Token` | Over the client's TLS connection. |
 | S6.9 | Attacker-run endpoints | Threat model | `Dishonest_EP_Leaks` | Any request to an endpoint owned by an attacker AS leaks. |
 
+### Model 05 (`models/05_agent_payment_mandate.spthy`)
+*Focus: UPI-style case study. An AI agent pays under a mandate; does every debit stay inside what the principal approved (R13; case study `docs/case-study-upi.md`)?*
+
+| Step # | Protocol Action | RFC / Spec | Exact Tamarin Rule | State Preconditions & Effects |
+|---|---|---|---|---|
+| S5.1 | AS, payment servers, agents, attacker users | agent-grants-02; NPCI UPI Circle (secondary source) | `Setup_AS`, `Setup_PS`, `Setup_Honest_Agent`, `Setup_Dishonest_Agent`, `Setup_Dishonest_User` | One AS signing key; honest agents keep their key; dishonest agents' keys are public; attacker user accounts approve anything. |
+| S5.2 | Principal decides what the agent may pay | RFC 9396 `authorization_details`; UPI Circle caps | `Principal_Intent` | `Intent(user, agent, payee, cap, payment server)`; the task goes to the agent privately. |
+| S5.3 | Agent asks for a mandate (PAR) | RFC 9126; agent-grants-02 | `Agent_Request_Mandate` | Request over TLS (`ToAS`). |
+| S5.4 | AS issues the mandate after the principal's approval | agent-grants-02 §9.1 (no consent substitution); UPI 2FA at linking | `AS_Issue_From_Agent`, `AS_Issue_From_Network`, `AS_Issue_Dishonest_User` | Fixed: needs `!Intended` matching the request. `NO_CONSENT_BINDING`: issues whatever is asked. Mandate = signed `<mid, user, agent, payee, cap, payment server, cnf>`. |
+| S5.5 | Principal revokes (delinks) | RFC 7009; UPI Circle delinking | `Principal_Revoke` | `Revoked(mid)`. |
+| S5.6 | Agent pays with proof of possession | RFC 9449 (DPoP `jti`, `ath`); agent-grants-02 `cnf` | `Agent_Pay` | Signs `<payment id, payment server, payee, amount, h(mandate)>`; within its cap; request leaks. |
+| S5.7 | Payment server executes | agent-grants-02 (RS MUSTs); RFC 9396; UPI per-payment validation | `PS_Execute` | `verify` mandate; PoP (removed by `NO_SENDER_CONSTRAINT`); `AudCheck` (`NO_AUD`), `PayeeCheck` (`NO_PAYEE_CHECK`), `AmountCheck` (`NO_AMOUNT_CHECK`), `StatusCheck` (`NO_REVOCATION_CHECK`); payment id once. |
+
+### Model 07 (`models/07_confused_deputy_proxy.spthy`)
+*Focus: the confused-deputy attack on an MCP proxy server with a static third-party client ID (MCP Security Best Practices; R14).*
+
+| Step # | Protocol Action | RFC / Spec | Exact Tamarin Rule | State Preconditions & Effects |
+|---|---|---|---|---|
+| S7.1 | Users and redirect endpoints | Threat model | `Setup_User`, `Honest_Redirect_Endpoint`, `Attacker_Redirect_Endpoint` | Each redirect URI is owned by an honest client or by the attacker, never both. |
+| S7.2 | Dynamic client registration at the proxy | RFC 7591 | `DCR_Honest_Client`, `DCR_Attacker_Client` | `!Client(client_id, registered redirect URI)`; the attacker registers any redirect URI. |
+| S7.3 | Proxy consent screen | MCP Security Best Practices, Confused Deputy: per-client consent | `User_Approves_Client` | An honest user approves only clients it uses (`UserApproves`). |
+| S7.4 | Authorization request | RFC 6749 §4.1.1, RFC 7636 | `Client_Start`, `User_Clicks_Link` | Honest client: own state and PKCE challenge. Attacker: any request opened in the user's browser. |
+| S7.5 | Proxy authorizes, third-party AS silent (consent cookie) | MCP Security Best Practices, Confused Deputy (vulnerable conditions) | `Proxy_Authorize` | `ConsentCheck` (per client; `CONSENT_NOT_CLIENT_BOUND`: any client), `RedirectCheck` (exact match; `NO_REDIRECT_CHECK`). Issues a single-use code. |
+| S7.6 | Redirect delivers the code | RFC 6749 §4.1.2 | `Deliver_To_Honest_Client`, `Deliver_To_Attacker` | Honest redirect URI: private to its client. Attacker endpoint: public. |
+| S7.7 | Token request | RFC 6749 §4.1.3, RFC 7636 §4.5 | `Client_Redeem`, `Proxy_Token_Honest_Client`, `Proxy_Token_Network`, `Client_Done` | PKCE verifier checked; token issued for (user, client). |
+
 ---
 
 ## 3. Formal Security Properties (Lemmas)

@@ -48,6 +48,13 @@ MODELS = {
     "06": dict(file="models/06_audience_injection.spthy", contexts=[()],
                flags=["AUD_TOKEN_ENDPOINT", "AS_LENIENT", "NO_META_CHECK"],
                props=["client_authentication", "token_secrecy"]),
+    "05": dict(file="models/05_agent_payment_mandate.spthy", contexts=[()],
+               flags=["NO_CONSENT_BINDING", "NO_PAYEE_CHECK", "NO_AMOUNT_CHECK", "NO_AUD",
+                      "NO_SENDER_CONSTRAINT", "NO_REVOCATION_CHECK"],
+               props=["debit_within_intent", "no_debit_after_revocation", "debit_requested_by_agent"]),
+    "07": dict(file="models/07_confused_deputy_proxy.spthy", contexts=[()],
+               flags=["CONSENT_NOT_CLIENT_BOUND", "NO_REDIRECT_CHECK"],
+               props=["token_only_to_consented_client", "token_secrecy"]),
 }
 
 LINE = re.compile(r"^\s*([A-Za-z0-9_]+) \((all-traces|exists-trace)\): (.*)$")

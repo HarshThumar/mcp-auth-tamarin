@@ -44,5 +44,9 @@ Modelled in model 04 (see [threat-model.md](threat-model.md) for the parameters 
 | P5 | **Enterprise grant agreement:** an honest RAS issues a token for U to client C only on an ID-JAG issued for U, that RAS and C (no cross-RAS replay). | 04 `ras_grant_agreement` |
 | P6 | **Session integrity:** if an honest user's client session with an honest AS ends with a token, that AS issued it for that user and client (no code injection / login CSRF). | 02 `session_integrity` |
 | P7 | **Client authentication (no audience injection):** an honest AS accepts an honest client's assertion only if the client sent that assertion to an endpoint of that same AS. | 06 `client_authentication` |
+| P8 | **Per-client consent at a proxy:** an MCP proxy server issues a token for user U to a client only if U approved that client. | 07 `token_only_to_consented_client` (07 also checks P3 `token_secrecy`) |
+| P10 | **Payment within intent (case study):** every debit for an honest principal goes to a payee, at a payment server and for an amount that principal intended for that agent. | 05 `debit_within_intent` |
+| P11 | **No payment after revocation:** no debit on a mandate after the principal revoked it. | 05 `no_debit_after_revocation` |
+| P12 | **Payment requested by the agent:** for an honest principal and agent, every debit is one the agent asked for (no replay or rewrite). | 05 `debit_requested_by_agent` |
 
 Helper and sanity lemmas (`*_sources`, `executable*`, `client_key_secret`, `code_single_use`) are not properties; `scripts/prove.sh` counts them separately.

@@ -72,6 +72,20 @@ Models 03 and 04 are not tied to one advisory. They check spec-level combination
 - AS audience policy is a restriction: issuer only (fixed), or issuer or token endpoint URL (`AUD_TOKEN_ENDPOINT`, `AS_LENIENT`).
 - Left out: `jti` replay caches (they would not stop a never-used leaked assertion), the authorization code flow (models 02–03), refresh, scopes.
 
+### Model 07 modelling choices (confused deputy at a proxy)
+- **Third-party AS collapsed, worst case:** the consent cookie for the proxy's static client ID is always present, so the third-party AS never asks. The third-party token itself is not a property here; the question is which MCP client the proxy hands the user's access to.
+- **Users only approve clients they use:** the proxy's consent screen shows the client's name and registered redirect URI; an honest user never approves an attacker-registered client. Tricking the user into approving is out of scope.
+- **Redirect URIs belong to one side:** each URI is owned either by an honest client (delivery is private) or by the attacker (delivery is public). Honest clients are public clients with PKCE; codes are single-use.
+- **The attacker's link:** any authorization request can be opened in an honest user's browser, which carries the user's session at the proxy.
+- **Not modelled:** the spec's `state`-cookie timing rule ("MUST NOT be set until after the user has approved"), iframing/clickjacking, and the third-party leg's own `state`.
+
+### Model 05 modelling choices (agent payment mandate, case study)
+- **No real mandate standard to pin:** draft-mishra-oauth-agent-grants-02 has no mandate object; payee and amount cap are modelled as RFC 9396 `authorization_details` inside the signed mandate token. NPCI UPI Circle rules are taken from a secondary summary and only motivate the checks; the model does not claim to be UPI.
+- **Amounts are two classes** (`small`, `large`; `large` allows both). Monthly totals, cooling periods and clocks are left out (no arithmetic or time in Tamarin); revocation is an event ordering, and the online status check is a restriction "debit before revocation".
+- **Payment requests leak** (FAPI 2.0 attacker model A5: leaked request logs). The payment server executes each payment id once (DPoP `jti`-style cache, always on), and proof of possession is the agent's signature over the payment id, payment server, payee, amount and the mandate's hash.
+- **Malicious agents and attacker accounts:** an honest principal may install a malicious agent (its key is public); attacker user accounts approve anything. P10 and P11 cover honest principals with any agent; P12 needs an honest agent.
+- **Consent:** in the fixed model the AS issues a mandate only if it matches an `Intent` of that principal for that agent (the principal's authenticated approval).
+
 ### Model 04 modelling choices (ID-JAG)
 
 - One honest IdP whose signing key never leaks, trusted by every honest RAS. SSO (OIDC/SAML and the ID token) is abstracted into the private channel from the client to the IdP, so the IdP's client authentication and its "ID token audience = client" check are built in. Honest users only sign in to honest clients; attacker-controlled users (`User_Dishonest`) also sign in to attacker-run clients, which then hold genuine ID-JAGs. P2' and P5 are stated for honest users.
