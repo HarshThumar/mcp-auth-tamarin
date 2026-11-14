@@ -4,9 +4,9 @@
 
 Each model is run once for **every subset of its removable checks** (one flag = one check). A cell is the result of a property with that subset removed: ✅ proved, ❌ attack found, ❌ᵃ attack found with an exists-trace attack lemma (reduced model, see results.md R8), ∅ no attack in the reduced model (not a proof), ⏱ timeout (no result; the cap is stated), ? missing. A row marked **vacuous** is one where the honest protocol cannot run (`executable` fails), so a ✅ there means nothing.
 
-**Tests:** 21 cells agree with `scripts/prove.sh`; 10 subset pairs checked for monotonicity; 0 problem(s). 2 vacuous cell(s) left out of the monotonicity test (a flag that changes behaviour, rather than removing a check, can make the honest run impossible).
+**Tests:** 79 cells agree with `scripts/prove.sh`; 968 subset pairs checked for monotonicity; 0 problem(s). 4 vacuous cell(s) left out of the monotonicity test (a flag that changes behaviour, rather than removing a check, can make the honest run impossible).
 
-**Coverage:** 20 of 20 property cells decided (100 %).
+**Coverage:** 236 of 236 property cells decided (100 %).
 
 ## Model 01
 
@@ -42,3 +42,116 @@ Checks: CAUD = client: `aud` = issuer (`AUD_TOKEN_ENDPOINT` removes it), ASAUD =
 
 - P7 `client_authentication` holds iff **CAUD ∧ META** (necessary: CAUD, META)
 - P3 `token_secrecy` holds iff **CAUD ∧ META** (necessary: CAUD, META)
+
+## Model 05
+
+Checks: CONSENT = principal's approval (`NO_CONSENT_BINDING` removes it), PAYEE = payee check (`NO_PAYEE_CHECK` removes it), AMOUNT = amount cap check (`NO_AMOUNT_CHECK` removes it), AUD = RS audience check (`NO_AUD` removes it), POP = proof of possession (`NO_SENDER_CONSTRAINT` removes it), REVOKE = revocation check (`NO_REVOCATION_CHECK` removes it)
+
+| Removed checks | P10 `debit_within_intent` | P11 `no_debit_after_revocation` | P12 `debit_requested_by_agent` | s |
+|---|---|---|---|---|
+| none (all checks on) | ✅ | ✅ | ✅ | 81 |
+| AMOUNT | ❌ | ✅ | ✅ | 54 |
+| AUD | ❌ | ✅ | ✅ | 74 |
+| CONSENT | ❌ | ✅ | ✅ | 80 |
+| PAYEE | ❌ | ✅ | ✅ | 90 |
+| REVOKE | ✅ | ❌ | ✅ | 117 |
+| POP | ✅ | ✅ | ❌ | 27 |
+| AMOUNT, AUD | ❌ | ✅ | ✅ | 66 |
+| AMOUNT, REVOKE | ❌ | ❌ | ✅ | 80 |
+| AMOUNT, POP | ❌ | ✅ | ❌ | 43 |
+| AUD, REVOKE | ❌ | ❌ | ✅ | 117 |
+| AUD, POP | ❌ | ✅ | ❌ | 32 |
+| CONSENT, AMOUNT | ❌ | ✅ | ✅ | 62 |
+| CONSENT, AUD | ❌ | ✅ | ✅ | 100 |
+| CONSENT, PAYEE | ❌ | ✅ | ✅ | 77 |
+| CONSENT, REVOKE | ❌ | ❌ | ✅ | 151 |
+| CONSENT, POP | ❌ | ✅ | ❌ | 42 |
+| PAYEE, AMOUNT | ❌ | ✅ | ✅ | 86 |
+| PAYEE, AUD | ❌ | ✅ | ✅ | 93 |
+| PAYEE, REVOKE | ❌ | ❌ | ✅ | 121 |
+| PAYEE, POP | ❌ | ✅ | ❌ | 51 |
+| POP, REVOKE | ✅ | ❌ | ❌ | 91 |
+| AMOUNT, AUD, REVOKE | ❌ | ❌ | ✅ | 91 |
+| AMOUNT, AUD, POP | ❌ | ✅ | ❌ | 31 |
+| AMOUNT, POP, REVOKE | ❌ | ❌ | ❌ | 78 |
+| AUD, POP, REVOKE | ❌ | ❌ | ❌ | 89 |
+| CONSENT, AMOUNT, AUD | ❌ | ✅ | ✅ | 59 |
+| CONSENT, AMOUNT, REVOKE | ❌ | ❌ | ✅ | 75 |
+| CONSENT, AMOUNT, POP | ❌ | ✅ | ❌ | 35 |
+| CONSENT, AUD, REVOKE | ❌ | ❌ | ✅ | 93 |
+| CONSENT, AUD, POP | ❌ | ✅ | ❌ | 33 |
+| CONSENT, PAYEE, AMOUNT | ❌ | ✅ | ✅ | 56 |
+| CONSENT, PAYEE, AUD | ❌ | ✅ | ✅ | 67 |
+| CONSENT, PAYEE, REVOKE | ❌ | ❌ | ✅ | 106 |
+| CONSENT, PAYEE, POP | ❌ | ✅ | ❌ | 32 |
+| CONSENT, POP, REVOKE | ❌ | ❌ | ❌ | 75 |
+| PAYEE, AMOUNT, AUD | ❌ | ✅ | ✅ | 47 |
+| PAYEE, AMOUNT, REVOKE | ❌ | ❌ | ✅ | 71 |
+| PAYEE, AMOUNT, POP | ❌ | ✅ | ❌ | 21 |
+| PAYEE, AUD, REVOKE | ❌ | ❌ | ✅ | 103 |
+| PAYEE, AUD, POP | ❌ | ✅ | ❌ | 22 |
+| PAYEE, POP, REVOKE | ❌ | ❌ | ❌ | 84 |
+| AMOUNT, AUD, POP, REVOKE | ❌ | ❌ | ❌ | 62 |
+| CONSENT, AMOUNT, AUD, REVOKE | ❌ | ❌ | ✅ | 77 |
+| CONSENT, AMOUNT, AUD, POP | ❌ | ✅ | ❌ | 27 |
+| CONSENT, AMOUNT, POP, REVOKE | ❌ | ❌ | ❌ | 69 |
+| CONSENT, AUD, POP, REVOKE | ❌ | ❌ | ❌ | 74 |
+| CONSENT, PAYEE, AMOUNT, AUD | ❌ | ✅ | ✅ | 57 |
+| CONSENT, PAYEE, AMOUNT, REVOKE | ❌ | ❌ | ✅ | 85 |
+| CONSENT, PAYEE, AMOUNT, POP | ❌ | ✅ | ❌ | 29 |
+| CONSENT, PAYEE, AUD, REVOKE | ❌ | ❌ | ✅ | 103 |
+| CONSENT, PAYEE, AUD, POP | ❌ | ✅ | ❌ | 30 |
+| CONSENT, PAYEE, POP, REVOKE | ❌ | ❌ | ❌ | 83 |
+| PAYEE, AMOUNT, AUD, REVOKE | ❌ | ❌ | ✅ | 69 |
+| PAYEE, AMOUNT, AUD, POP | ❌ | ✅ | ❌ | 24 |
+| PAYEE, AMOUNT, POP, REVOKE | ❌ | ❌ | ❌ | 59 |
+| PAYEE, AUD, POP, REVOKE | ❌ | ❌ | ❌ | 66 |
+| CONSENT, AMOUNT, AUD, POP, REVOKE | ❌ | ❌ | ❌ | 54 |
+| CONSENT, PAYEE, AMOUNT, AUD, REVOKE | ❌ | ❌ | ✅ | 66 |
+| CONSENT, PAYEE, AMOUNT, AUD, POP | ❌ | ✅ | ❌ | 23 |
+| CONSENT, PAYEE, AMOUNT, POP, REVOKE | ❌ | ❌ | ❌ | 55 |
+| CONSENT, PAYEE, AUD, POP, REVOKE | ❌ | ❌ | ❌ | 67 |
+| PAYEE, AMOUNT, AUD, POP, REVOKE | ❌ | ❌ | ❌ | 56 |
+| CONSENT, PAYEE, AMOUNT, AUD, POP, REVOKE | ❌ | ❌ | ❌ | 43 |
+
+**What is enough** (minimal sets of kept checks that make the property hold; non-vacuous proved cells only):
+
+- P10 `debit_within_intent` holds iff **AMOUNT ∧ AUD ∧ CONSENT ∧ PAYEE** (necessary: AMOUNT, AUD, CONSENT, PAYEE)
+- P11 `no_debit_after_revocation` holds iff **REVOKE** (necessary: REVOKE)
+- P12 `debit_requested_by_agent` holds iff **POP** (necessary: POP)
+
+## Model 07
+
+Checks: CCONSENT = per-client consent (`CONSENT_NOT_CLIENT_BOUND` removes it), REDIR = exact redirect URI (`NO_REDIRECT_CHECK` removes it)
+
+| Removed checks | P8 `token_only_to_consented_client` | P3 `token_secrecy` | s |
+|---|---|---|---|
+| none (all checks on) | ✅ | ✅ | 7 |
+| CCONSENT | ❌ | ✅ | 8 |
+| REDIR | ✅ | ❌ | 12 |
+| CCONSENT, REDIR | ❌ | ❌ | 12 |
+
+**What is enough** (minimal sets of kept checks that make the property hold; non-vacuous proved cells only):
+
+- P8 `token_only_to_consented_client` holds iff **CCONSENT** (necessary: CCONSENT)
+- P3 `token_secrecy` holds iff **REDIR** (necessary: REDIR)
+
+## Model 08
+
+Checks: SAUD = MCP server checks `aud` (`S_NO_AUD` removes it), XCHG = server exchanges the token (not a check: a design choice) (`PASSTHROUGH` removes it), DAUD = downstream API checks `aud` (`D_NO_AUD` removes it)
+
+| Removed checks | P9 `downstream_only_via_server` | P2 `server_accepts_only_own_tokens` | s |
+|---|---|---|---|
+| none (all checks on) | ✅ | ✅ | 1 |
+| DAUD | ❌ | ✅ | 1 |
+| XCHG **vacuous** | ✅ | ✅ | 1 |
+| SAUD | ✅ | ❌ | 1 |
+| XCHG, DAUD | ❌ | ✅ | 2 |
+| SAUD, DAUD | ❌ | ❌ | 1 |
+| SAUD, XCHG **vacuous** | ✅ | ❌ | 1 |
+| SAUD, XCHG, DAUD | ❌ | ❌ | 2 |
+
+**What is enough** (minimal sets of kept checks that make the property hold; non-vacuous proved cells only):
+
+- P9 `downstream_only_via_server` holds iff **DAUD ∧ XCHG** (necessary: DAUD, XCHG)
+- P2 `server_accepts_only_own_tokens` holds iff **SAUD** (necessary: SAUD)
