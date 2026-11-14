@@ -79,6 +79,11 @@ Models 03 and 04 are not tied to one advisory. They check spec-level combination
 - **The attacker's link:** any authorization request can be opened in an honest user's browser, which carries the user's session at the proxy.
 - **Not modelled:** the spec's `state`-cookie timing rule ("MUST NOT be set until after the user has approved"), iframing/clickjacking, and the third-party leg's own `state`.
 
+### Model 08 modelling choices (token passthrough)
+- **One shared AS** issues audience-restricted tokens for MCP servers and the downstream API (the setting where passthrough "works" in practice). Token contents are looked up from a persistent fact (introspection or a signed JWT, abstracted).
+- **The server's controls are one event** (`ServerDecides`); P9 asks whether the downstream API can be made to act without it. Rate limits, logging and request validation are not modelled individually.
+- **Malicious MCP servers** keep the tokens clients send them. `PASSTHROUGH` is a design choice, not a removed check: with the downstream audience check on, the passthrough design cannot run at all (`executable` fails), so that variant is vacuous by design.
+
 ### Model 05 modelling choices (agent payment mandate, case study)
 - **No real mandate standard to pin:** draft-mishra-oauth-agent-grants-02 has no mandate object; payee and amount cap are modelled as RFC 9396 `authorization_details` inside the signed mandate token. NPCI UPI Circle rules are taken from a secondary summary and only motivate the checks; the model does not claim to be UPI.
 - **Amounts are two classes** (`small`, `large`; `large` allows both). Monthly totals, cooling periods and clocks are left out (no arithmetic or time in Tamarin); revocation is an event ordering, and the online status check is a restriction "debit before revocation".

@@ -55,6 +55,9 @@ MODELS = {
     "07": dict(file="models/07_confused_deputy_proxy.spthy", contexts=[()],
                flags=["CONSENT_NOT_CLIENT_BOUND", "NO_REDIRECT_CHECK"],
                props=["token_only_to_consented_client", "token_secrecy"]),
+    "08": dict(file="models/08_token_passthrough.spthy", contexts=[()],
+               flags=["S_NO_AUD", "PASSTHROUGH", "D_NO_AUD"],
+               props=["downstream_only_via_server", "server_accepts_only_own_tokens"]),
 }
 
 LINE = re.compile(r"^\s*([A-Za-z0-9_]+) \((all-traces|exists-trace)\): (.*)$")

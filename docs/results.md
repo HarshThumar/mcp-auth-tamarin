@@ -99,6 +99,19 @@ P8 = `token_only_to_consented_client`, P3 = `token_secrecy` (a token for an hone
 | `NO_REDIRECT_CHECK` | ✅ | ❌ falsified (15) | R14 |
 | both | ❌ falsified (11) | ❌ falsified (15) | R14 |
 
+### Model 08: token passthrough (14 Nov 2026)
+
+P9 = `downstream_only_via_server`, P2 = `server_accepts_only_own_tokens`.
+
+| Variant | executable | P9 | P2 | Write-up |
+|---|---|---|---|---|
+| fixed (server checks `aud`, exchanges its token, downstream checks `aud`) | ✅ | ✅ (10) | ✅ (4) | |
+| `S_NO_AUD` | ✅ | ✅ | ❌ falsified (6) | R15 |
+| `PASSTHROUGH` alone | ❌ **vacuous** (no honest run) | ✅ | ✅ | R15 |
+| `D_NO_AUD` | ✅ | ❌ falsified (6) | ✅ | R15 |
+| `PASSTHROUGH` + `D_NO_AUD` | ✅ | ❌ falsified (6) | ✅ | R15 |
+| all three | ✅ | ❌ falsified (6) | ❌ falsified (6) | R15 |
+
 ## Findings and open questions
 
 None of these is a new vulnerability. Each one is the model **rediscovering a published, already-fixed bug or a known attack class** when the relevant check is removed, which shows the abstraction is fine-grained enough to see real bugs.
@@ -210,6 +223,12 @@ The variant table shows which checks are needed for which client. For a **public
 - **Model + lemmas:** 07. If the proxy's consent record is not bound to the client (`CONSENT_NOT_CLIENT_BOUND`), an attacker registers its own client, gets the user to click a crafted authorization link, and the proxy issues a token for that user to the attacker's client (P8 falsified, 11 steps). If the proxy does not require the exact registered redirect URI (`NO_REDIRECT_CHECK`), per-client consent does not help: the attacker uses an honest client the user already approved, its own redirect URI and its own PKCE challenge, and gets that honest client's token for the user (P3 falsified, 15 steps). Each check stops one attack; both are needed.
 - **What the specs say:** MCP Security Best Practices, "Confused Deputy Problem": per-client consent MUST, consent cookies bound to the `client_id` "not just 'user has consented'", exact redirect URI matching MUST.
 - **Is it new?** No. It is the attack described in the MCP Security Best Practices, which already prescribes both mitigations. The model is a machine-checked confirmation that each listed mitigation is necessary and that together they suffice in this abstraction (third-party consent cookie always present).
+
+### R15 (14 Nov 2026): token passthrough only works when the downstream audience check is off, and then the MCP server can be bypassed
+- **Model + lemmas:** 08. With the downstream API checking `aud`, a passthrough server cannot work at all (`executable` fails). Passthrough needs `D_NO_AUD`, and with `D_NO_AUD` (passthrough or not) a token a client gave to a malicious MCP server is used directly at the downstream API, which acts for the user without the honest MCP server's decision (P9 falsified, 6 steps). The MCP server's own audience check protects a different property (P2; `S_NO_AUD` falsifies it, as in model 02 `NO_AUD`) and does not affect P9.
+- **What the specs say:** the MCP Security Best Practices list "Security Control Circumvention" as a passthrough risk and forbid passthrough; MCP Token Handling requires audience validation at the MCP server.
+- **Is it new?** No. It restates the spec's rationale as a machine-checked statement: the check that stops circumvention is the downstream API's audience check, and passthrough is exactly the design that needs that check turned off.
+- **Scope step-up (W3c) was not modelled separately.** By reading the spec: the client treats a challenged `scope` as authoritative, but the resulting token is still audience-bound to the server that challenged it (RFC 8707). A malicious server can make the client ask for broad scopes, but the token is only useful at that server unless audience binding fails, which is P2/P3 of models 02 and 08. This is an argument, not a proof.
 
 ## Modelling notes
 

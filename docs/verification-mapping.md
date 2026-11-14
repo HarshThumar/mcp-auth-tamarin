@@ -137,6 +137,17 @@ This document provides the Domain-Driven Design (DDD) traceability matrix betwee
 | S7.6 | Redirect delivers the code | RFC 6749 §4.1.2 | `Deliver_To_Honest_Client`, `Deliver_To_Attacker` | Honest redirect URI: private to its client. Attacker endpoint: public. |
 | S7.7 | Token request | RFC 6749 §4.1.3, RFC 7636 §4.5 | `Client_Redeem`, `Proxy_Token_Honest_Client`, `Proxy_Token_Network`, `Client_Done` | PKCE verifier checked; token issued for (user, client). |
 
+### Model 08 (`models/08_token_passthrough.spthy`)
+*Focus: token passthrough (MCP Security Best Practices, "Token Passthrough"; R15).*
+
+| Step # | Protocol Action | RFC / Spec | Exact Tamarin Rule | State Preconditions & Effects |
+|---|---|---|---|---|
+| S8.1 | Honest and malicious MCP servers, downstream API | Threat model | `Setup_Honest_Server`, `Setup_Dishonest_Server`, `Setup_Downstream` | Roles unique per name. |
+| S8.2 | Client gets an audience-restricted token per MCP server | RFC 8707 §2; MCP Token Handling | `Client_Token_For_Honest_Server`, `Client_Token_For_Dishonest_Server` | `!Token(t, user, aud)`; tokens for malicious servers leak. |
+| S8.3 | MCP server validates the token | MCP Token Handling ("MUST validate ... intended audience") | `Server_Receives_From_Client`, `Server_Receives_From_Network` | `ServerAudCheck` (removed by `S_NO_AUD`). |
+| S8.4 | MCP server calls the downstream API | RFC 8693; MCP "MUST NOT pass through" | `Server_Calls_Downstream` | `ServerDecides`. Fixed: exchanges for its own `aud` = downstream token. `PASSTHROUGH`: forwards the client's token. |
+| S8.5 | Downstream API executes | RFC 8707 §2 at the downstream API | `Downstream_From_Server`, `Downstream_From_Network` | `DownstreamAudCheck` (removed by `D_NO_AUD`). |
+
 ---
 
 ## 3. Formal Security Properties (Lemmas)

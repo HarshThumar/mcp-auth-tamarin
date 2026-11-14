@@ -32,6 +32,7 @@ PROP_NO = {  # global property numbers (docs/flow.md §3)
     "token_secrecy": "P3", "refresh_token_secrecy": "P4",
     "ras_grant_agreement": "P5", "session_integrity": "P6",
     "client_authentication": "P7", "token_only_to_consented_client": "P8",
+    "downstream_only_via_server": "P9", "server_accepts_only_own_tokens": "P2",
     "debit_within_intent": "P10", "no_debit_after_revocation": "P11",
     "debit_requested_by_agent": "P12",
 }
@@ -48,6 +49,8 @@ CHECK_NAME = {  # flag -> the check it removes (ubiquitous language)
     "NO_AMOUNT_CHECK": "amount cap check", "NO_SENDER_CONSTRAINT": "proof of possession",
     "NO_REVOCATION_CHECK": "revocation check",
     "CONSENT_NOT_CLIENT_BOUND": "per-client consent",
+    "S_NO_AUD": "MCP server checks `aud`", "PASSTHROUGH": "server exchanges the token (not a check: a design choice)",
+    "D_NO_AUD": "downstream API checks `aud`",
 }
 SHORT = {  # flag -> short symbol for formulas
     "NO_BINDING": "BIND", "UNVALIDATED_ISSUER": "META", "NO_AUD": "AUD", "NO_ISS": "ISS",
@@ -58,6 +61,7 @@ SHORT = {  # flag -> short symbol for formulas
     "NO_CONSENT_BINDING": "CONSENT", "NO_PAYEE_CHECK": "PAYEE", "NO_AMOUNT_CHECK": "AMOUNT",
     "NO_SENDER_CONSTRAINT": "POP", "NO_REVOCATION_CHECK": "REVOKE",
     "CONSENT_NOT_CLIENT_BOUND": "CCONSENT",
+    "S_NO_AUD": "SAUD", "PASSTHROUGH": "XCHG", "D_NO_AUD": "DAUD",
 }
 FAILS = {"F", "A"}
 
