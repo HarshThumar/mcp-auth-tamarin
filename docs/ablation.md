@@ -4,9 +4,9 @@
 
 Each model is run once for **every subset of its removable checks** (one flag = one check). A cell is the result of a property with that subset removed: ✅ proved, ❌ attack found, ❌ᵃ attack found with an exists-trace attack lemma (reduced model, see results.md R8), ∅ no attack in the reduced model (not a proof), ⏱ timeout (no result; the cap is stated), ? missing. A row marked **vacuous** is one where the honest protocol cannot run (`executable` fails), so a ✅ there means nothing.
 
-**Tests:** 79 cells agree with `scripts/prove.sh`; 968 subset pairs checked for monotonicity; 0 problem(s). 4 vacuous cell(s) left out of the monotonicity test (a flag that changes behaviour, rather than removing a check, can make the honest run impossible).
+**Tests:** 176 cells agree with `scripts/prove.sh`; 1789 subset pairs checked for monotonicity; 0 problem(s). 4 vacuous cell(s) left out of the monotonicity test (a flag that changes behaviour, rather than removing a check, can make the honest run impossible).
 
-**Coverage:** 236 of 236 property cells decided (100 %).
+**Coverage:** 505 of 532 property cells decided (94 %).
 
 ## Model 01
 
@@ -22,6 +22,155 @@ Checks: BIND = issuer binding (`NO_BINDING` removes it), META = metadata issuer 
 **What is enough** (minimal sets of kept checks that make the property hold; non-vacuous proved cells only):
 
 - P1 `client_credential_secrecy` holds iff **BIND ∧ META** (necessary: BIND, META)
+
+## Model 02
+
+Checks: AUD = RS audience check (`NO_AUD` removes it), ISS = `iss` check (`NO_ISS` removes it), RES = AS honours `resource` (`NO_RESOURCE` removes it), STATE = `state` (`NO_STATE` removes it), PKCE = PKCE (`NO_PKCE` removes it), REDIR = exact redirect URI (`NO_REDIRECT_CHECK` removes it)
+
+| Removed checks | P2 `rs_accepts_only_consented` | P3 `token_secrecy` | P6 `session_integrity` | s |
+|---|---|---|---|---|
+| none (all checks on) | ✅ | ✅ | ✅ | 238 |
+| AUD | ❌ | ✅ | ✅ | 253 |
+| ISS | ✅ | ❌ | ✅ | 279 |
+| PKCE | ✅ | ✅ | ✅ | 340 |
+| REDIR | ✅ | ❌ | ✅ | 445 |
+| RES | ❌ | ✅ | ✅ | 280 |
+| STATE | ✅ | ✅ | ✅ | 256 |
+| AUD, ISS | ❌ | ❌ | ✅ | 484 |
+| AUD, PKCE | ❌ | ✅ | ✅ | 350 |
+| AUD, REDIR | ❌ | ❌ | ✅ | 566 |
+| AUD, RES | ❌ | ✅ | ✅ | 428 |
+| AUD, STATE | ❌ | ✅ | ✅ | 410 |
+| ISS, PKCE | ✅ | ❌ | ✅ | 495 |
+| ISS, REDIR | ✅ | ❌ | ✅ | 939 |
+| ISS, RES | ❌ | ❌ | ✅ | 823 |
+| ISS, STATE | ✅ | ❌ | ✅ | 671 |
+| PKCE, REDIR | ✅ | ❌ | ✅ | 475 |
+| RES, PKCE | ❌ | ✅ | ✅ | 701 |
+| RES, REDIR | ❌ | ❌ | ✅ | 651 |
+| RES, STATE | ❌ | ✅ | ✅ | 601 |
+| STATE, PKCE | ✅ | ✅ | ❌ | 447 |
+| STATE, REDIR | ✅ | ❌ | ✅ | 527 |
+| AUD, ISS, PKCE | ❌ | ❌ | ✅ | 559 |
+| AUD, ISS, REDIR | ❌ | ❌ | ✅ | 420 |
+| AUD, ISS, RES | ❌ | ❌ | ✅ | 655 |
+| AUD, ISS, STATE | ❌ | ❌ | ✅ | 604 |
+| AUD, PKCE, REDIR | ❌ | ❌ | ✅ | 207 |
+| AUD, RES, PKCE | ❌ | ✅ | ✅ | 223 |
+| AUD, RES, REDIR | ❌ | ❌ | ✅ | 252 |
+| AUD, RES, STATE | ❌ | ✅ | ✅ | 330 |
+| AUD, STATE, PKCE | ❌ | ✅ | ❌ | 188 |
+| AUD, STATE, REDIR | ❌ | ❌ | ✅ | 239 |
+| ISS, PKCE, REDIR | ✅ | ❌ | ✅ | 299 |
+| ISS, RES, PKCE | ❌ | ❌ | ✅ | 248 |
+| ISS, RES, REDIR | ❌ | ❌ | ✅ | 329 |
+| ISS, RES, STATE | ❌ | ❌ | ✅ | 317 |
+| ISS, STATE, PKCE | ✅ | ❌ | ❌ | 277 |
+| ISS, STATE, REDIR | ✅ | ❌ | ✅ | 385 |
+| RES, PKCE, REDIR | ❌ | ❌ | ✅ | 390 |
+| RES, STATE, PKCE | ❌ | ✅ | ❌ | 326 |
+| RES, STATE, REDIR | ❌ | ❌ | ✅ | 396 |
+| STATE, PKCE, REDIR | ✅ | ❌ | ❌ | 339 |
+| AUD, ISS, PKCE, REDIR | ❌ | ❌ | ✅ | 334 |
+| AUD, ISS, RES, PKCE | ❌ | ❌ | ✅ | 434 |
+| AUD, ISS, RES, REDIR | ❌ | ❌ | ✅ | 445 |
+| AUD, ISS, RES, STATE | ❌ | ❌ | ✅ | 449 |
+| AUD, ISS, STATE, PKCE | ❌ | ❌ | ❌ | 437 |
+| AUD, ISS, STATE, REDIR | ❌ | ❌ | ✅ | 437 |
+| AUD, RES, PKCE, REDIR | ❌ | ❌ | ✅ | 375 |
+| AUD, RES, STATE, PKCE | ❌ | ✅ | ❌ | 382 |
+| AUD, RES, STATE, REDIR | ❌ | ❌ | ✅ | 313 |
+| AUD, STATE, PKCE, REDIR | ❌ | ❌ | ❌ | 338 |
+| ISS, RES, PKCE, REDIR | ❌ | ❌ | ✅ | 376 |
+| ISS, RES, STATE, PKCE | ❌ | ❌ | ❌ | 365 |
+| ISS, RES, STATE, REDIR | ❌ | ❌ | ✅ | 566 |
+| ISS, STATE, PKCE, REDIR | ✅ | ❌ | ❌ | 378 |
+| RES, STATE, PKCE, REDIR | ❌ | ❌ | ❌ | 386 |
+| AUD, ISS, RES, PKCE, REDIR | ❌ | ❌ | ✅ | 424 |
+| AUD, ISS, RES, STATE, PKCE | ❌ | ❌ | ❌ | 425 |
+| AUD, ISS, RES, STATE, REDIR | ❌ | ❌ | ✅ | 655 |
+| AUD, ISS, STATE, PKCE, REDIR | ❌ | ❌ | ❌ | 429 |
+| AUD, RES, STATE, PKCE, REDIR | ❌ | ❌ | ❌ | 513 |
+| ISS, RES, STATE, PKCE, REDIR | ❌ | ❌ | ❌ | 530 |
+| AUD, ISS, RES, STATE, PKCE, REDIR | ❌ | ❌ | ❌ | 559 |
+
+**What is enough** (minimal sets of kept checks that make the property hold; non-vacuous proved cells only):
+
+- P2 `rs_accepts_only_consented` holds iff **AUD ∧ RES** (necessary: AUD, RES)
+- P3 `token_secrecy` holds iff **ISS ∧ REDIR** (necessary: ISS, REDIR)
+- P6 `session_integrity` holds iff **PKCE ∨ STATE** (necessary: none)
+
+## Model 03
+
+Checks: META = metadata issuer check (`NO_META_CHECK` removes it), ISS = `iss` check (`NO_ISS` removes it), RTBIND = refresh-token binding (`RT_UNBOUND` removes it), ASAUD = AS checks assertion `aud` (`AS_NO_ASSERTION_AUD` removes it)
+
+| Removed checks | P2 `rs_accepts_only_consented` | P3 `token_secrecy` | P4 `refresh_token_secrecy` | s |
+|---|---|---|---|---|
+| none (all checks on) | ✅ | ✅ | ✅ | 504 |
+| ASAUD | ✅ | ✅ | ✅ | 1342 |
+| ISS | ✅ | ✅ | ✅ | 594 |
+| META | ⏱ | ⏱ | ⏱ | 1815 |
+| RTBIND | ✅ | ✅ | ❌ | 1711 |
+| ISS, ASAUD | ✅ | ❌ | ❌ | 1243 |
+| ISS, RTBIND | ✅ | ✅ | ❌ | 1417 |
+| META, ASAUD | ⏱ | ⏱ | ⏱ | 1820 |
+| META, ISS | ⏱ | ⏱ | ⏱ | 1826 |
+| META, RTBIND | ⏱ | ⏱ | ⏱ | 1802 |
+| RTBIND, ASAUD | ✅ | ❌ᵃ | ❌ᵃ | 1024 |
+| ISS, RTBIND, ASAUD | ⏱ | ⏱ | ⏱ | 1813 |
+| META, ISS, ASAUD | ⏱ | ⏱ | ⏱ | 1820 |
+| META, ISS, RTBIND | ⏱ | ⏱ | ⏱ | 1806 |
+| META, RTBIND, ASAUD | ⏱ | ⏱ | ⏱ | 1824 |
+| META, ISS, RTBIND, ASAUD | ⏱ | ⏱ | ⏱ | 2552 |
+
+**What is enough** (minimal sets of kept checks that make the property hold; non-vacuous proved cells only):
+
+- P2 `rs_accepts_only_consented` holds iff **(ASAUD ∧ META) ∨ (ISS ∧ META) ∨ (META ∧ RTBIND)** (necessary: META; 9 cell(s) undecided, so this is a lower bound)
+- P3 `token_secrecy` holds iff **(ASAUD ∧ META) ∨ (ISS ∧ META ∧ RTBIND)** (necessary: META; 9 cell(s) undecided, so this is a lower bound)
+- P4 `refresh_token_secrecy` holds iff **(ASAUD ∧ META ∧ RTBIND) ∨ (ISS ∧ META ∧ RTBIND)** (necessary: META, RTBIND; 9 cell(s) undecided, so this is a lower bound)
+
+## Model 03 (PUBLIC)
+
+Checks: META = metadata issuer check (`NO_META_CHECK` removes it), ISS = `iss` check (`NO_ISS` removes it), RTBIND = refresh-token binding (`RT_UNBOUND` removes it)
+
+| Removed checks | P2 `rs_accepts_only_consented` | P3 `token_secrecy` | P4 `refresh_token_secrecy` | s |
+|---|---|---|---|---|
+| none (all checks on) | ✅ | ✅ | ✅ | 277 |
+| ISS | ✅ | ❌ | ❌ | 1352 |
+| META | ✅ | ❌ | ❌ | 1605 |
+| RTBIND | ✅ | ❌ | ❌ | 1490 |
+| ISS, RTBIND | ✅ | ❌ | ❌ | 819 |
+| META, ISS | ✅ | ❌ | ❌ | 1687 |
+| META, RTBIND | ✅ | ❌ | ❌ | 829 |
+| META, ISS, RTBIND | ✅ | ❌ | ❌ | 735 |
+
+**What is enough** (minimal sets of kept checks that make the property hold; non-vacuous proved cells only):
+
+- P2 `rs_accepts_only_consented` holds iff **⊤ (no check needed)** (necessary: none)
+- P3 `token_secrecy` holds iff **ISS ∧ META ∧ RTBIND** (necessary: ISS, META, RTBIND)
+- P4 `refresh_token_secrecy` holds iff **ISS ∧ META ∧ RTBIND** (necessary: ISS, META, RTBIND)
+
+## Model 04
+
+Checks: JAGAUD = RAS checks ID-JAG `aud` (`NO_IDJAG_AUD` removes it), JAGCID = RAS checks ID-JAG `client_id` (`NO_CLIENT_BINDING` removes it), JAGRES = `resource` in ID-JAG (`NO_RESOURCE_CLAIM` removes it)
+
+| Removed checks | P2 `rs_accepts_only_authorized` | P2' `rs_accepts_only_requested` | P3 `token_secrecy` | P5 `ras_grant_agreement` | s |
+|---|---|---|---|---|---|
+| none (all checks on) | ✅ | ✅ | ✅ | ✅ | 48 |
+| JAGCID | ✅ | ✅ | ✅ | ✅ | 43 |
+| JAGAUD | ✅ | ✅ | ✅ | ✅ | 43 |
+| JAGRES | ❌ | ❌ | ❌ | ✅ | 63 |
+| JAGCID, JAGRES | ❌ | ❌ | ❌ | ✅ | 57 |
+| JAGAUD, JAGCID | ✅ | ✅ | ✅ | ❌ | 47 |
+| JAGAUD, JAGRES | ❌ | ❌ | ❌ | ✅ | 62 |
+| JAGAUD, JAGCID, JAGRES | ❌ | ❌ | ❌ | ❌ | 59 |
+
+**What is enough** (minimal sets of kept checks that make the property hold; non-vacuous proved cells only):
+
+- P2 `rs_accepts_only_authorized` holds iff **JAGRES** (necessary: JAGRES)
+- P2' `rs_accepts_only_requested` holds iff **JAGRES** (necessary: JAGRES)
+- P3 `token_secrecy` holds iff **JAGRES** (necessary: JAGRES)
+- P5 `ras_grant_agreement` holds iff **JAGCID ∨ JAGAUD** (necessary: none)
 
 ## Model 06
 

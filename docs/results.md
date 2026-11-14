@@ -1,6 +1,6 @@
 # Results
 
-*All models last checked 14 Nov 2026 with Tamarin 1.12.0 and Maude 3.5.1 (local WSL run; CI runs the same script).* `scripts/prove.sh` (and CI) checks every expectation automatically: **225/225 pass** (91 security-property results, 134 helper or sanity lemmas), with no well-formedness warnings, in about 40 minutes locally with `JOBS=4`. The full Tamarin output is saved in `results/` and uploaded as a CI artifact. Property numbers (P1–P12) are the same in every model; see [flow.md](flow.md) §3.
+*All models last checked 14 Nov 2026 with Tamarin 1.12.0 and Maude 3.5.1 (local WSL run; CI runs the same script).* `scripts/prove.sh` (and CI) checks every expectation automatically: **295/295 pass** (135 security-property results, 160 helper or sanity lemmas) across 8 models, with no well-formedness warnings, in about 60 minutes locally with `JOBS=4`. Every combination of removed checks is in [ablation.md](ablation.md). The full Tamarin output is saved in `results/` and uploaded as a CI artifact. Property numbers (P1–P12) are the same in every model; see [flow.md](flow.md) §3.
 
 ### Model 01: credential binding (revised 14 Nov 2026)
 
