@@ -63,9 +63,37 @@ Models 03 and 04 are not tied to one advisory. They check spec-level combination
 - Codes are single-use (lemma `code_single_use`); tags have public destructors, as in model 02.
 - Left out: refresh-token rotation, DPoP, expiry, scopes, the browser, session integrity (see model 02).
 
+### Model 06 modelling choices (audience injection)
+
+- AS metadata has three fields: `issuer`, the token endpoint's owner and the revocation endpoint's owner. An attacker AS may fill each with anything, including an honest AS's issuer or endpoints. The token endpoint URL is the public term `tep(A)`, distinct from the issuer `A`, as in practice.
+- Which AS the client talks to is chosen freely: a malicious MCP server can name any AS, so PRM is not modelled separately.
+- The client-authenticated "other endpoint" is RFC 7009 revocation. PAR, introspection or CIBA would play the same role; one is enough to show the attack.
+- Second phase: client-credentials grant only (client impersonation). P7 is stated for honest clients; attacker-run CIMD clients exist.
+- AS audience policy is a restriction: issuer only (fixed), or issuer or token endpoint URL (`AUD_TOKEN_ENDPOINT`, `AS_LENIENT`).
+- Left out: `jti` replay caches (they would not stop a never-used leaked assertion), the authorization code flow (models 02–03), refresh, scopes.
+
+### Model 07 modelling choices (confused deputy at a proxy)
+- **Third-party AS collapsed, worst case:** the consent cookie for the proxy's static client ID is always present, so the third-party AS never asks. The third-party token itself is not a property here; the question is which MCP client the proxy hands the user's access to.
+- **Users only approve clients they use:** the proxy's consent screen shows the client's name and registered redirect URI; an honest user never approves an attacker-registered client. Tricking the user into approving is out of scope.
+- **Redirect URIs belong to one side:** each URI is owned either by an honest client (delivery is private) or by the attacker (delivery is public). Honest clients are public clients with PKCE; codes are single-use.
+- **The attacker's link:** any authorization request can be opened in an honest user's browser, which carries the user's session at the proxy.
+- **Not modelled:** the spec's `state`-cookie timing rule ("MUST NOT be set until after the user has approved"), iframing/clickjacking, and the third-party leg's own `state`.
+
+### Model 08 modelling choices (token passthrough)
+- **One shared AS** issues audience-restricted tokens for MCP servers and the downstream API (the setting where passthrough "works" in practice). Token contents are looked up from a persistent fact (introspection or a signed JWT, abstracted).
+- **The server's controls are one event** (`ServerDecides`); P9 asks whether the downstream API can be made to act without it. Rate limits, logging and request validation are not modelled individually.
+- **Malicious MCP servers** keep the tokens clients send them. `PASSTHROUGH` is a design choice, not a removed check: with the downstream audience check on, the passthrough design cannot run at all (`executable` fails), so that variant is vacuous by design.
+
+### Model 05 modelling choices (agent payment mandate, case study)
+- **No real mandate standard to pin:** draft-mishra-oauth-agent-grants-02 has no mandate object; payee and amount cap are modelled as RFC 9396 `authorization_details` inside the signed mandate token. NPCI UPI Circle rules are taken from a secondary summary and only motivate the checks; the model does not claim to be UPI.
+- **Amounts are two classes** (`small`, `large`; `large` allows both). Monthly totals, cooling periods and clocks are left out (no arithmetic or time in Tamarin); revocation is an event ordering, and the online status check is a restriction "debit before revocation".
+- **Payment requests leak** (FAPI 2.0 attacker model A5: leaked request logs). The payment server executes each payment id once (DPoP `jti`-style cache, always on), and proof of possession is the agent's signature over the payment id, payment server, payee, amount and the mandate's hash.
+- **Malicious agents and attacker accounts:** an honest principal may install a malicious agent (its key is public); attacker user accounts approve anything. P10 and P11 cover honest principals with any agent; P12 needs an honest agent.
+- **Consent:** in the fixed model the AS issues a mandate only if it matches an `Intent` of that principal for that agent (the principal's authenticated approval).
+
 ### Model 04 modelling choices (ID-JAG)
 
-- One honest IdP whose signing key never leaks, trusted by every honest RAS. SSO (OIDC/SAML and the ID token) is abstracted into the private channel from the client to the IdP, so the IdP's client authentication and its "ID token audience = client" check are built in. Honest users only sign in to honest clients; attacker-controlled users (`User_Dishonest`) also sign in to attacker-run clients, which then hold genuine ID-JAGs. P2' and P4 are stated for honest users.
+- One honest IdP whose signing key never leaks, trusted by every honest RAS. SSO (OIDC/SAML and the ID token) is abstracted into the private channel from the client to the IdP, so the IdP's client authentication and its "ID token audience = client" check are built in. Honest users only sign in to honest clients; attacker-controlled users (`User_Dishonest`) also sign in to attacker-run clients, which then hold genuine ID-JAGs. P2' and P5 are stated for honest users.
 - Worst-case IdP policy: it issues an ID-JAG for any `audience` and `resource` the honest client asks for.
 - Clients are confidential (`private_key_jwt`); the RAS always checks the assertion signature and that its `aud` is the RAS. The attacker may register its own clients. The client sets `resource` to the MCP server it talks to.
 - `TokenIssued` records the token's **actual** audience (unlike model 02, where P3 is keyed on the requested one).

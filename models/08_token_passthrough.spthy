@@ -1,0 +1,151 @@
+theory MCP_Token_Passthrough
+begin
+
+/*
+ * Model 08: token passthrough. Can a downstream API be used for a user
+ * without the MCP server's own decision (its security controls)?
+ *
+ * Spec pinned: MCP Security Best Practices, draft as of 14 Nov 2026,
+ *   "Token Passthrough": an anti-pattern where an MCP server "accepts tokens
+ *   from an MCP client without validating that the tokens were properly
+ *   issued to the MCP server and passes them through to the downstream API";
+ *   risk "Security Control Circumvention"; "MCP servers MUST NOT accept any
+ *   tokens that were not explicitly issued for the MCP server".
+ *   MCP authorization, Token Handling: servers "MUST validate that access
+ *   tokens were issued specifically for them as the intended audience"
+ *   (RFC 8707 §2), and the MCP server "MUST NOT pass through the token it
+ *   received" to upstream APIs.
+ *   RFC 8693 (token exchange): the correct way for the MCP server to get its
+ *   own token for the downstream API.
+ *
+ * Setting
+ *   One AS (a shared identity provider) issues audience-restricted tokens.
+ *   An honest user's client gets a token for each MCP server it uses; some
+ *   MCP servers are malicious and keep what they receive. The honest MCP
+ *   server S decides (its controls) and then calls the downstream API D for
+ *   the user, either with its own exchanged token (fixed) or by forwarding
+ *   the client's token (PASSTHROUGH).
+ *
+ * Properties (global numbering, docs/flow.md §3)
+ *   P9 downstream_only_via_server: the downstream API executes a request for
+ *      an honest user only if the honest MCP server decided that request for
+ *      that user.
+ *   P2 server_accepts_only_own_tokens: the honest MCP server accepts a token
+ *      for a user only if it was issued for that server.
+ *
+ * Variants (one flag = one check, or one design choice)
+ *   S_NO_AUD      the MCP server does not check the token's audience
+ *   PASSTHROUGH   the MCP server forwards the client's token downstream
+ *                 instead of exchanging it (design choice, not a check)
+ *   D_NO_AUD      the downstream API does not check the token's audience
+ *
+ * Abstraction (docs/threat-model.md)
+ *   - Tokens are fresh names; the AS records (token, user, audience) in a
+ *     persistent fact that the servers consult (introspection or a signed
+ *     JWT, abstracted).
+ *   - A token sent to a malicious MCP server reaches the attacker.
+ *   - The MCP server's controls are one action, ServerDecides(user, req).
+ */
+
+rule Setup_Honest_Server:
+    [ ]
+  --[ Server($S), Server_Honest($S) ]->
+    [ !HonestServer($S) ]
+
+rule Setup_Dishonest_Server:
+    [ ]
+  --[ Server($X), Server_Dishonest($X) ]->
+    [ !DishonestServer($X) ]
+
+rule Setup_Downstream:
+    [ ]
+  --[ Server($D), Downstream_Setup($D) ]->
+    [ !Downstream($D) ]
+
+restriction server_roles_unique:
+  "All s #i #j. Server(s) @ #i & Server(s) @ #j ==> #i = #j"
+
+restriction equality:
+  "All x y #t. Eq(x, y) @ #t ==> x = y"
+
+#ifdef S_NO_AUD
+#else
+restriction server_checks_audience:
+  "All aud s #t. ServerAudCheck(aud, s) @ #t ==> aud = s"
+#endif
+
+#ifdef D_NO_AUD
+#else
+restriction downstream_checks_audience:
+  "All aud d #t. DownstreamAudCheck(aud, d) @ #t ==> aud = d"
+#endif
+
+/* Client side: an honest user's client gets a token for an MCP server
+   (RFC 8707 `resource` = that server) and uses it there. */
+
+rule Client_Token_For_Honest_Server:
+    [ !HonestServer($S), Fr(~t), Fr(~req) ]
+  --[ TokenIssued(~t, $U, $S) ]->
+    [ !Token(~t, $U, $S), ToServer($S, <~t, ~req>) ]
+
+rule Client_Token_For_Dishonest_Server:
+    [ !DishonestServer($X), Fr(~t) ]
+  --[ TokenIssued(~t, $U, $X) ]->
+    [ !Token(~t, $U, $X), Out(~t) ]
+
+/* The honest MCP server. */
+
+rule Server_Receives_From_Client:
+    [ ToServer($S, <t, req>), !Token(t, u, aud), !HonestServer($S) ]
+  --[ ServerAudCheck(aud, $S), ServerAccepts($S, u, t, aud) ]->
+    [ Handle($S, u, t, req) ]
+
+// Anyone can call the honest server with a token it holds.
+rule Server_Receives_From_Network:
+    [ In(<t, req>), !Token(t, u, aud), !HonestServer($S) ]
+  --[ ServerAudCheck(aud, $S), ServerAccepts($S, u, t, aud) ]->
+    [ Handle($S, u, t, req) ]
+
+#ifdef PASSTHROUGH
+rule Server_Calls_Downstream:
+    [ Handle($S, u, t, req), !Downstream($D) ]
+  --[ ServerDecides($S, u, req) ]->
+    [ ToDownstream($D, <t, req>) ]
+#else
+// RFC 8693: the server exchanges the user's token for its own downstream one.
+rule Server_Calls_Downstream:
+    [ Handle($S, u, t, req), !Downstream($D), Fr(~t2) ]
+  --[ ServerDecides($S, u, req), TokenIssued(~t2, u, $D) ]->
+    [ !Token(~t2, u, $D), ToDownstream($D, <~t2, req>) ]
+#endif
+
+/* The downstream API. */
+
+rule Downstream_From_Server:
+    [ ToDownstream($D, <t, req>), !Token(t, u, aud), !Downstream($D) ]
+  --[ DownstreamAudCheck(aud, $D), DownstreamExecutes($D, u, req) ]->
+    [ ]
+
+rule Downstream_From_Network:
+    [ In(<t, req>), !Token(t, u, aud), !Downstream($D) ]
+  --[ DownstreamAudCheck(aud, $D), DownstreamExecutes($D, u, req) ]->
+    [ ]
+
+/* Lemmas */
+
+lemma executable:
+  exists-trace
+  "Ex d u req #i. DownstreamExecutes(d, u, req) @ #i
+     & not (Ex x #k. Server_Dishonest(x) @ #k)"
+
+// P9: the downstream API acts for a user only on a request that the honest
+// MCP server decided for that user.
+lemma downstream_only_via_server:
+  "All d u req #i. DownstreamExecutes(d, u, req) @ #i
+     ==> Ex s #j. ServerDecides(s, u, req) @ #j & #j < #i"
+
+// P2: the honest MCP server accepts only tokens issued for it.
+lemma server_accepts_only_own_tokens:
+  "All s u t aud #i. ServerAccepts(s, u, t, aud) @ #i ==> aud = s"
+
+end

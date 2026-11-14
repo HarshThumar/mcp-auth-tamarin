@@ -1,0 +1,320 @@
+theory Agent_Payment_Mandate
+begin
+
+builtins: signing, hashing
+
+/*
+ * Model 05: an AI agent pays under a mandate (UPI-style case study).
+ * Does every payment the payment server executes stay inside what the human
+ * principal approved: payee, amount cap, payment server, not after revocation,
+ * and only when the agent actually asked for it?
+ *
+ * Spec pinned (14 Nov 2026):
+ *   draft-mishra-oauth-agent-grants-02, "OAuth Profile for Delegated AI Agent
+ *     Authorization" (Orchestrum Technologies; reference implementation
+ *     "Grantex"). Generic OAuth delegation: PAR + PKCE + sender-constrained
+ *     tokens (DPoP / mTLS, `cnf`). It defines NO payment-mandate fields; for
+ *     financial constraints it says to "use structured authorization details
+ *     [RFC9396]". Relevant MUSTs (wording to be re-checked against the .txt):
+ *       - token `aud` "MUST identify the single resource requested"; the RS
+ *         "MUST reject tokens without the expected audience";
+ *       - the RS "MUST validate ... the cnf sender constraint" and "MUST NOT
+ *         treat signature verification alone as sufficient authorization";
+ *       - an automated policy decision "MUST NOT replace the Principal's
+ *         authenticated approval" (consent substitution, §9.1);
+ *       - revocation status is checked only "when the deployment's risk model
+ *         requires online state" (no MUST).
+ *   RFC 9396 (authorization_details): the mandate's payee and amount cap.
+ *   NPCI UPI Circle delegated payments (OC 201 / OC 201-B), known to us only
+ *     from a secondary summary (Khaitan & Co, 20 Nov 2025), NOT from NPCI's
+ *     text: per-transaction and monthly caps, the device/user ID "validated
+ *     during each payment request", 2FA consent at linking, delinking.
+ *
+ * Roles
+ *   Principal (user), AI agent (OAuth client with an asymmetric key), one
+ *   honest authorization server (AS) issuing mandate tokens, honest payment
+ *   servers (PS; the bank/PSP side that debits), payees (merchants; any name,
+ *   including the attacker's). The attacker controls the network, runs its
+ *   own agents and user accounts, and some agents a principal installs are
+ *   malicious.
+ *
+ * Mandate token (signed by the AS)
+ *   <'mandate', mid, user, agent, payee, cap, ps, cnf = pk(agent key)>
+ *   cap is 'small' or 'large' (an amount class; 'large' allows both).
+ *
+ * Properties (global numbering, docs/flow.md §3)
+ *   P10 debit_within_intent       every debit for an honest principal is to a
+ *                                 payee, at a payment server and for an amount
+ *                                 the principal intended for that agent
+ *   P11 no_debit_after_revocation no debit on a mandate after its revocation
+ *   P12 debit_requested_by_agent  for an honest principal and honest agent,
+ *                                 every debit is one the agent asked for
+ *                                 (payee, amount, payment server)
+ *
+ * Checks (one flag removes one check)
+ *   NO_CONSENT_BINDING     AS issues a mandate without the principal's
+ *                          approval (consent substitution)
+ *   NO_PAYEE_CHECK         PS does not compare the request's payee with the
+ *                          mandate's payee
+ *   NO_AMOUNT_CHECK        PS does not compare the amount with the cap
+ *   NO_AUD                 PS does not check that the mandate names it
+ *   NO_SENDER_CONSTRAINT   PS accepts the mandate as a bearer token (no
+ *                          proof of possession of the agent key)
+ *   NO_REVOCATION_CHECK    PS does not check revocation status
+ *
+ * Abstraction (docs/threat-model.md)
+ *   - Payment requests leak to the attacker (as FAPI 2.0's attacker model
+ *     A5, leaked request logs): the agent sends them in the clear. The
+ *     payment server never executes the same payment id twice (DPoP-style
+ *     `jti` replay check, always on).
+ *   - Proof of possession = the agent's signature over <payment id, payment
+ *     server, payee, amount, hash of the mandate> (DPoP `htu`/`ath`-style).
+ *   - Consent: an honest principal approves only what it intends
+ *     (Intent fact); the agent learns the intent over a private channel.
+ *   - Amounts are two classes; monthly totals, cooling periods and real time
+ *     are left out (Tamarin has no arithmetic or clock); revocation is an
+ *     event ordering.
+ */
+
+/* ------------------------------------------------------------------ */
+/* Setup                                                              */
+/* ------------------------------------------------------------------ */
+
+rule Setup_AS:
+    [ Fr(~skAS) ]
+  --[ ASSetup() ]->
+    [ !ASKey(~skAS), !ASPk(pk(~skAS)), Out(pk(~skAS)) ]
+
+restriction as_once:
+  "All #i #j. ASSetup() @ #i & ASSetup() @ #j ==> #i = #j"
+
+rule Setup_PS:
+    [ ]
+  --[ PSSetup($PS) ]->
+    [ !PS($PS) ]
+
+rule Setup_Honest_Agent:
+    [ Fr(~sk) ]
+  --[ AgentSetup($A), AgentKeyCreated($A, ~sk) ]->
+    [ !Agent($A), !AgentKey($A, ~sk), !AgentPk($A, pk(~sk)), Out(pk(~sk)) ]
+
+// A malicious agent (e.g. one the principal installed that turns out bad).
+rule Setup_Dishonest_Agent:
+    [ Fr(~sk) ]
+  --[ AgentSetup($A), Agent_Dishonest($A) ]->
+    [ !Agent($A), !AgentPk($A, pk(~sk)), Out(~sk) ]
+
+restriction agent_once:
+  "All a #i #j. AgentSetup(a) @ #i & AgentSetup(a) @ #j ==> #i = #j"
+
+rule Setup_Dishonest_User:
+    [ ]
+  --[ User_Dishonest($U) ]->
+    [ !DishonestUser($U) ]
+
+restriction equality:
+  "All x y #t. Eq(x, y) @ #t ==> x = y"
+
+// Amount classes: 'large' covers both; 'small' only 'small'.
+restriction amount_classes:
+  "All c #t. CapIs(c) @ #t ==> (c = 'small' | c = 'large')"
+
+/* ------------------------------------------------------------------ */
+/* The checks                                                         */
+/* ------------------------------------------------------------------ */
+
+#ifdef NO_PAYEE_CHECK
+#else
+restriction payee_checked:
+  "All p q #t. PayeeCheck(p, q) @ #t ==> p = q"
+#endif
+
+#ifdef NO_AMOUNT_CHECK
+#else
+restriction amount_within_cap:
+  "All c a #t. AmountCheck(c, a) @ #t ==> (c = 'large' | a = 'small')"
+#endif
+
+#ifdef NO_AUD
+#else
+restriction mandate_audience_checked:
+  "All aud ps #t. AudCheck(aud, ps) @ #t ==> aud = ps"
+#endif
+
+#ifdef NO_REVOCATION_CHECK
+#else
+// Online status check: a payment server never debits a revoked mandate.
+restriction revocation_checked:
+  "All m #d #r. StatusCheck(m) @ #d & Revoked(m) @ #r ==> #d < #r"
+#endif
+
+// The payment server executes each payment id at most once (always on).
+restriction payment_id_once:
+  "All p #i #j. PaymentId(p) @ #i & PaymentId(p) @ #j ==> #i = #j"
+
+/* ------------------------------------------------------------------ */
+/* Principal and agent                                                */
+/* ------------------------------------------------------------------ */
+
+// An honest principal decides what it wants agent $A to be able to pay.
+rule Principal_Intent:
+    [ !Agent($A), !PS($PS), Fr(~iid) ]
+  --[ Intent($U, $A, $P, $cap, $PS), CapIs($cap) ]->
+    [ !Intended($U, $A, $P, $cap, $PS), AgentTask($A, $U, $P, $cap, $PS) ]
+
+// An honest agent asks the AS for the mandate (PAR, over TLS).
+rule Agent_Request_Mandate:
+    [ AgentTask($A, $U, $P, cap, $PS), !AgentKey($A, ~sk), Fr(~rid) ]
+  -->
+    [ St_Agent(~rid, $A, $U, $P, cap, $PS)
+    , ToAS(~rid, <'par', $A, $U, $P, cap, $PS>) ]
+
+/* ------------------------------------------------------------------ */
+/* AS: issues mandate tokens                                          */
+/* ------------------------------------------------------------------ */
+
+#ifdef NO_CONSENT_BINDING
+
+// Consent substitution: the AS issues whatever an agent asks for.
+rule AS_Issue_From_Agent:
+    [ ToAS(~rid, <'par', $A, $U, $P, cap, $PS>), !ASKey(~skAS), !AgentPk($A, pkA)
+    , Fr(~mid) ]
+  --[ MandateIssued(~mid, $U, $A, $P, cap, $PS), CapIs(cap) ]->
+    [ FromAS(~rid, <<'mandate', ~mid, $U, $A, $P, cap, $PS, pkA>,
+                    sign(<'mandate', ~mid, $U, $A, $P, cap, $PS, pkA>, ~skAS)>)
+    , !Issued(~mid, $U) ]
+
+rule AS_Issue_From_Network:
+    [ In(<'par', $A, $U, $P, cap, $PS>), !ASKey(~skAS), !AgentPk($A, pkA), !PS($PS)
+    , Fr(~mid) ]
+  --[ MandateIssued(~mid, $U, $A, $P, cap, $PS), CapIs(cap) ]->
+    [ Out(<<'mandate', ~mid, $U, $A, $P, cap, $PS, pkA>,
+           sign(<'mandate', ~mid, $U, $A, $P, cap, $PS, pkA>, ~skAS)>)
+    , !Issued(~mid, $U) ]
+
+#else
+
+// The principal authenticates and approves exactly the request (it matches
+// the principal's intent).
+rule AS_Issue_From_Agent:
+    [ ToAS(~rid, <'par', $A, $U, $P, cap, $PS>), !Intended($U, $A, $P, cap, $PS)
+    , !ASKey(~skAS), !AgentPk($A, pkA), Fr(~mid) ]
+  --[ MandateIssued(~mid, $U, $A, $P, cap, $PS) ]->
+    [ FromAS(~rid, <<'mandate', ~mid, $U, $A, $P, cap, $PS, pkA>,
+                    sign(<'mandate', ~mid, $U, $A, $P, cap, $PS, pkA>, ~skAS)>)
+    , !Issued(~mid, $U) ]
+
+// A malicious agent asks directly; an honest principal still approves only
+// what it intended for that agent.
+rule AS_Issue_From_Network:
+    [ In(<'par', $A, $U, $P, cap, $PS>), !Intended($U, $A, $P, cap, $PS)
+    , !ASKey(~skAS), !AgentPk($A, pkA), Fr(~mid) ]
+  --[ MandateIssued(~mid, $U, $A, $P, cap, $PS) ]->
+    [ Out(<<'mandate', ~mid, $U, $A, $P, cap, $PS, pkA>,
+           sign(<'mandate', ~mid, $U, $A, $P, cap, $PS, pkA>, ~skAS)>)
+    , !Issued(~mid, $U) ]
+
+#endif
+
+// Attacker-controlled user accounts approve anything for any agent.
+rule AS_Issue_Dishonest_User:
+    [ In(<'par', $A, $U, $P, cap, $PS>), !DishonestUser($U), !PS($PS)
+    , !ASKey(~skAS), !AgentPk($A, pkA), Fr(~mid) ]
+  --[ MandateIssued(~mid, $U, $A, $P, cap, $PS), CapIs(cap) ]->
+    [ Out(<<'mandate', ~mid, $U, $A, $P, cap, $PS, pkA>,
+           sign(<'mandate', ~mid, $U, $A, $P, cap, $PS, pkA>, ~skAS)>)
+    , !Issued(~mid, $U) ]
+
+// The principal revokes (delinks) a mandate at any time.
+rule Principal_Revoke:
+    [ !Issued(~mid, $U) ]
+  --[ Revoked(~mid) ]->
+    [ ]
+
+/* ------------------------------------------------------------------ */
+/* Agent pays                                                         */
+/* ------------------------------------------------------------------ */
+
+// The honest agent pays its task's payee, within the cap, at the mandate's
+// payment server, with a proof of possession. Requests leak (see header).
+rule Agent_Pay:
+    [ St_Agent(~rid, $A, $U, $P, cap, $PS)
+    , FromAS(~rid, <<'mandate', mid, $U, $A, $P, cap, $PS, pkA>, sigM>)
+    , !AgentKey($A, ~sk), Fr(~pid) ]
+  --[ AgentPays($A, mid, $P, $amt, $PS), CapIs(cap), AmountOk(cap, $amt) ]->
+    [ Out(<'pay', <<'mandate', mid, $U, $A, $P, cap, $PS, pkA>, sigM>, $P, $amt, ~pid,
+           sign(<'pop', ~pid, $PS, $P, $amt, h(sigM)>, ~sk)>) ]
+
+// The honest agent only spends within its cap.
+restriction agent_stays_within_cap:
+  "All c a #t. AmountOk(c, a) @ #t ==> ((c = 'large' & (a = 'small' | a = 'large')) | (c = 'small' & a = 'small'))"
+
+/* ------------------------------------------------------------------ */
+/* Payment server executes                                            */
+/* ------------------------------------------------------------------ */
+
+#ifdef NO_SENDER_CONSTRAINT
+
+rule PS_Execute:
+    [ In(<'pay', <<'mandate', mid, u, a, p, cap, aud, cnf>, sigM>, payee, amt, pid, proof>)
+    , !ASPk(pkAS), !PS($PS) ]
+  --[ Eq(verify(sigM, <'mandate', mid, u, a, p, cap, aud, cnf>, pkAS), true)
+    , AudCheck(aud, $PS), PayeeCheck(p, payee), AmountCheck(cap, amt)
+    , StatusCheck(mid), PaymentId(pid)
+    , Debit(u, a, mid, payee, amt, $PS) ]->
+    [ ]
+
+#else
+
+rule PS_Execute:
+    [ In(<'pay', <<'mandate', mid, u, a, p, cap, aud, cnf>, sigM>, payee, amt, pid, proof>)
+    , !ASPk(pkAS), !PS($PS) ]
+  --[ Eq(verify(sigM, <'mandate', mid, u, a, p, cap, aud, cnf>, pkAS), true)
+    , Eq(verify(proof, <'pop', pid, $PS, payee, amt, h(sigM)>, cnf), true)
+    , AudCheck(aud, $PS), PayeeCheck(p, payee), AmountCheck(cap, amt)
+    , StatusCheck(mid), PaymentId(pid)
+    , Debit(u, a, mid, payee, amt, $PS) ]->
+    [ ]
+
+#endif
+
+/* ------------------------------------------------------------------ */
+/* Lemmas                                                             */
+/* ------------------------------------------------------------------ */
+
+lemma agent_key_secret [reuse]:
+  "All a sk #i. AgentKeyCreated(a, sk) @ #i ==> not (Ex #j. K(sk) @ #j)"
+
+// Sanity: an honest principal's honest agent pays, nothing malicious involved.
+lemma executable:
+  exists-trace
+  "Ex u a m p amt ps #i.
+     Debit(u, a, m, p, amt, ps) @ #i
+     & not (Ex x #k. Agent_Dishonest(x) @ #k)
+     & not (Ex x #k. User_Dishonest(x) @ #k)"
+
+// P10: every debit for an honest principal is to a payee, at a payment server
+// and for an amount that principal intended for that agent.
+lemma debit_within_intent:
+  "All u a m p amt ps #i.
+     Debit(u, a, m, p, amt, ps) @ #i
+     & not (Ex #k. User_Dishonest(u) @ #k)
+     ==> Ex cap #j. Intent(u, a, p, cap, ps) @ #j
+           & (cap = 'large' | amt = 'small')"
+
+// P11: no debit after the mandate is revoked.
+lemma no_debit_after_revocation:
+  "All u a m p amt ps #i #r.
+     Debit(u, a, m, p, amt, ps) @ #i & Revoked(m) @ #r
+     ==> #i < #r"
+
+// P12: for an honest principal and agent, every debit is one the agent asked
+// for (same mandate, payee, amount and payment server).
+lemma debit_requested_by_agent:
+  "All u a m p amt ps #i.
+     Debit(u, a, m, p, amt, ps) @ #i
+     & not (Ex #k. User_Dishonest(u) @ #k)
+     & not (Ex #k. Agent_Dishonest(a) @ #k)
+     ==> Ex #j. AgentPays(a, m, p, amt, ps) @ #j & #j < #i"
+
+end

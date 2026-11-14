@@ -2,6 +2,9 @@
 # Run every model variant and check each lemma against its expected result.
 # Usage: scripts/prove.sh            (needs tamarin-prover and maude on PATH)
 #        JOBS=4 scripts/prove.sh     (run 4 variants in parallel)
+#        ONLY=03 scripts/prove.sh    (only rows matching this regex on "model|flags|lemma")
+#        TIMEOUT=2400                (hard cap per variant in seconds, killed with SIGKILL; default 2400)
+# Wall time per variant is written to results/timings.tsv.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -16,6 +19,8 @@ expectations=(
   "models/01_as_selection.spthy|UNVALIDATED_ISSUER|executable|verified"
   "models/01_as_selection.spthy|UNVALIDATED_ISSUER|client_credential_secrecy|falsified"
   "models/01_as_selection.spthy|-|client_credential_secrecy|verified"
+  "models/01_as_selection.spthy|NO_BINDING|executable|verified"
+  "models/01_as_selection.spthy|NO_BINDING|client_credential_secrecy|falsified"
   "models/02_code_and_audience.spthy|NO_AUD|code_sources|verified"
   "models/02_code_and_audience.spthy|NO_AUD|token_sources|verified"
   "models/02_code_and_audience.spthy|NO_AUD|executable|verified"
@@ -215,6 +220,94 @@ expectations=(
   "models/04_id_jag.spthy|NO_RESOURCE_CLAIM|rs_accepts_only_requested|falsified"
   "models/04_id_jag.spthy|NO_RESOURCE_CLAIM|token_secrecy|falsified"
   "models/04_id_jag.spthy|NO_RESOURCE_CLAIM|ras_grant_agreement|verified"
+  "models/06_audience_injection.spthy|-|client_key_secret|verified"
+  "models/06_audience_injection.spthy|-|executable|verified"
+  "models/06_audience_injection.spthy|-|client_authentication|verified"
+  "models/06_audience_injection.spthy|-|token_secrecy|verified"
+  "models/06_audience_injection.spthy|-|injection_via_revocation|falsified"
+  "models/06_audience_injection.spthy|AUD_TOKEN_ENDPOINT,AS_LENIENT|client_key_secret|verified"
+  "models/06_audience_injection.spthy|AUD_TOKEN_ENDPOINT,AS_LENIENT|executable|verified"
+  "models/06_audience_injection.spthy|AUD_TOKEN_ENDPOINT,AS_LENIENT|client_authentication|falsified"
+  "models/06_audience_injection.spthy|AUD_TOKEN_ENDPOINT,AS_LENIENT|token_secrecy|falsified"
+  "models/06_audience_injection.spthy|AUD_TOKEN_ENDPOINT,AS_LENIENT|injection_via_revocation|verified"
+  "models/06_audience_injection.spthy|AS_LENIENT|client_key_secret|verified"
+  "models/06_audience_injection.spthy|AS_LENIENT|executable|verified"
+  "models/06_audience_injection.spthy|AS_LENIENT|client_authentication|verified"
+  "models/06_audience_injection.spthy|AS_LENIENT|token_secrecy|verified"
+  "models/06_audience_injection.spthy|AS_LENIENT|injection_via_revocation|falsified"
+  "models/06_audience_injection.spthy|NO_META_CHECK|client_key_secret|verified"
+  "models/06_audience_injection.spthy|NO_META_CHECK|executable|verified"
+  "models/06_audience_injection.spthy|NO_META_CHECK|client_authentication|falsified"
+  "models/06_audience_injection.spthy|NO_META_CHECK|token_secrecy|falsified"
+  "models/06_audience_injection.spthy|NO_META_CHECK|injection_via_revocation|verified"
+  "models/06_audience_injection.spthy|AUD_TOKEN_ENDPOINT|executable|falsified"
+  "models/06_audience_injection.spthy|AUD_TOKEN_ENDPOINT|client_authentication|verified"
+  "models/06_audience_injection.spthy|AUD_TOKEN_ENDPOINT|token_secrecy|verified"
+  "models/05_agent_payment_mandate.spthy|-|agent_key_secret|verified"
+  "models/05_agent_payment_mandate.spthy|-|executable|verified"
+  "models/05_agent_payment_mandate.spthy|-|debit_within_intent|verified"
+  "models/05_agent_payment_mandate.spthy|-|no_debit_after_revocation|verified"
+  "models/05_agent_payment_mandate.spthy|-|debit_requested_by_agent|verified"
+  "models/05_agent_payment_mandate.spthy|NO_CONSENT_BINDING|agent_key_secret|verified"
+  "models/05_agent_payment_mandate.spthy|NO_CONSENT_BINDING|executable|verified"
+  "models/05_agent_payment_mandate.spthy|NO_CONSENT_BINDING|debit_within_intent|falsified"
+  "models/05_agent_payment_mandate.spthy|NO_CONSENT_BINDING|no_debit_after_revocation|verified"
+  "models/05_agent_payment_mandate.spthy|NO_CONSENT_BINDING|debit_requested_by_agent|verified"
+  "models/05_agent_payment_mandate.spthy|NO_PAYEE_CHECK|agent_key_secret|verified"
+  "models/05_agent_payment_mandate.spthy|NO_PAYEE_CHECK|executable|verified"
+  "models/05_agent_payment_mandate.spthy|NO_PAYEE_CHECK|debit_within_intent|falsified"
+  "models/05_agent_payment_mandate.spthy|NO_PAYEE_CHECK|no_debit_after_revocation|verified"
+  "models/05_agent_payment_mandate.spthy|NO_PAYEE_CHECK|debit_requested_by_agent|verified"
+  "models/05_agent_payment_mandate.spthy|NO_AMOUNT_CHECK|agent_key_secret|verified"
+  "models/05_agent_payment_mandate.spthy|NO_AMOUNT_CHECK|executable|verified"
+  "models/05_agent_payment_mandate.spthy|NO_AMOUNT_CHECK|debit_within_intent|falsified"
+  "models/05_agent_payment_mandate.spthy|NO_AMOUNT_CHECK|no_debit_after_revocation|verified"
+  "models/05_agent_payment_mandate.spthy|NO_AMOUNT_CHECK|debit_requested_by_agent|verified"
+  "models/05_agent_payment_mandate.spthy|NO_AUD|agent_key_secret|verified"
+  "models/05_agent_payment_mandate.spthy|NO_AUD|executable|verified"
+  "models/05_agent_payment_mandate.spthy|NO_AUD|debit_within_intent|falsified"
+  "models/05_agent_payment_mandate.spthy|NO_AUD|no_debit_after_revocation|verified"
+  "models/05_agent_payment_mandate.spthy|NO_AUD|debit_requested_by_agent|verified"
+  "models/05_agent_payment_mandate.spthy|NO_SENDER_CONSTRAINT|agent_key_secret|verified"
+  "models/05_agent_payment_mandate.spthy|NO_SENDER_CONSTRAINT|executable|verified"
+  "models/05_agent_payment_mandate.spthy|NO_SENDER_CONSTRAINT|debit_within_intent|verified"
+  "models/05_agent_payment_mandate.spthy|NO_SENDER_CONSTRAINT|no_debit_after_revocation|verified"
+  "models/05_agent_payment_mandate.spthy|NO_SENDER_CONSTRAINT|debit_requested_by_agent|falsified"
+  "models/05_agent_payment_mandate.spthy|NO_REVOCATION_CHECK|agent_key_secret|verified"
+  "models/05_agent_payment_mandate.spthy|NO_REVOCATION_CHECK|executable|verified"
+  "models/05_agent_payment_mandate.spthy|NO_REVOCATION_CHECK|debit_within_intent|verified"
+  "models/05_agent_payment_mandate.spthy|NO_REVOCATION_CHECK|no_debit_after_revocation|falsified"
+  "models/05_agent_payment_mandate.spthy|NO_REVOCATION_CHECK|debit_requested_by_agent|verified"
+  "models/07_confused_deputy_proxy.spthy|-|executable|verified"
+  "models/07_confused_deputy_proxy.spthy|-|token_only_to_consented_client|verified"
+  "models/07_confused_deputy_proxy.spthy|-|token_secrecy|verified"
+  "models/07_confused_deputy_proxy.spthy|CONSENT_NOT_CLIENT_BOUND|executable|verified"
+  "models/07_confused_deputy_proxy.spthy|CONSENT_NOT_CLIENT_BOUND|token_only_to_consented_client|falsified"
+  "models/07_confused_deputy_proxy.spthy|CONSENT_NOT_CLIENT_BOUND|token_secrecy|verified"
+  "models/07_confused_deputy_proxy.spthy|NO_REDIRECT_CHECK|executable|verified"
+  "models/07_confused_deputy_proxy.spthy|NO_REDIRECT_CHECK|token_only_to_consented_client|verified"
+  "models/07_confused_deputy_proxy.spthy|NO_REDIRECT_CHECK|token_secrecy|falsified"
+  "models/07_confused_deputy_proxy.spthy|CONSENT_NOT_CLIENT_BOUND,NO_REDIRECT_CHECK|executable|verified"
+  "models/07_confused_deputy_proxy.spthy|CONSENT_NOT_CLIENT_BOUND,NO_REDIRECT_CHECK|token_only_to_consented_client|falsified"
+  "models/07_confused_deputy_proxy.spthy|CONSENT_NOT_CLIENT_BOUND,NO_REDIRECT_CHECK|token_secrecy|falsified"
+  "models/08_token_passthrough.spthy|-|executable|verified"
+  "models/08_token_passthrough.spthy|-|downstream_only_via_server|verified"
+  "models/08_token_passthrough.spthy|-|server_accepts_only_own_tokens|verified"
+  "models/08_token_passthrough.spthy|S_NO_AUD|executable|verified"
+  "models/08_token_passthrough.spthy|S_NO_AUD|downstream_only_via_server|verified"
+  "models/08_token_passthrough.spthy|S_NO_AUD|server_accepts_only_own_tokens|falsified"
+  "models/08_token_passthrough.spthy|PASSTHROUGH|executable|falsified"
+  "models/08_token_passthrough.spthy|PASSTHROUGH|downstream_only_via_server|verified"
+  "models/08_token_passthrough.spthy|PASSTHROUGH|server_accepts_only_own_tokens|verified"
+  "models/08_token_passthrough.spthy|D_NO_AUD|executable|verified"
+  "models/08_token_passthrough.spthy|D_NO_AUD|downstream_only_via_server|falsified"
+  "models/08_token_passthrough.spthy|D_NO_AUD|server_accepts_only_own_tokens|verified"
+  "models/08_token_passthrough.spthy|PASSTHROUGH,D_NO_AUD|executable|verified"
+  "models/08_token_passthrough.spthy|PASSTHROUGH,D_NO_AUD|downstream_only_via_server|falsified"
+  "models/08_token_passthrough.spthy|PASSTHROUGH,D_NO_AUD|server_accepts_only_own_tokens|verified"
+  "models/08_token_passthrough.spthy|S_NO_AUD,PASSTHROUGH,D_NO_AUD|executable|verified"
+  "models/08_token_passthrough.spthy|S_NO_AUD,PASSTHROUGH,D_NO_AUD|downstream_only_via_server|falsified"
+  "models/08_token_passthrough.spthy|S_NO_AUD,PASSTHROUGH,D_NO_AUD|server_accepts_only_own_tokens|falsified"
 )
 
 outfile() {  # model flag -> results file
@@ -233,9 +326,24 @@ run_variant() {  # model flag: one Tamarin run per variant, full derivation chec
     for f in "${fl[@]}"; do args+=("-D=$f"); done
   fi
   echo "== tamarin-prover ${args[*]}"
-  tamarin-prover "${args[@]}" >"$out" 2>&1 || true
+  local start rc=0
+  start=$(date +%s)
+  timeout -s KILL "${TIMEOUT:-2400}" tamarin-prover "${args[@]}" >"$out" 2>&1 || rc=$?
+  if [[ $rc -eq 124 || $rc -eq 137 ]]; then echo "PROVE_SH_TIMEOUT after ${TIMEOUT:-2400}s" >>"$out"; fi
+  printf '%s\t%s\t%s\n' "$(basename "$out" .txt)" "$(( $(date +%s) - start ))" "$rc" >>results/timings.tsv
 }
 export -f run_variant outfile
+
+# 0. ONLY=<regex> keeps the matching rows (on "model|flags|lemma").
+if [[ -n "${ONLY:-}" ]]; then
+  kept=()
+  for row in "${expectations[@]}"; do
+    if [[ "${row%|*}" =~ ${ONLY} ]]; then kept+=("$row"); fi
+  done
+  if [[ ${#kept[@]} -eq 0 ]]; then echo "FAIL  ONLY=${ONLY} matches no expectation"; exit 1; fi
+  expectations=("${kept[@]}")
+fi
+printf 'variant\tseconds\texit\n' >results/timings.tsv
 
 # 1. Run every variant once. JOBS=n runs n variants in parallel (default 1).
 printf '%s\n' "${expectations[@]}" | cut -d'|' -f1,2 | awk '!seen[$0]++' | tr '|' ' ' \
@@ -248,6 +356,10 @@ for row in "${expectations[@]}"; do
   out="$(outfile "$model" "$flag")"
   if [[ -z "${checked[$out]:-}" ]]; then
     checked[$out]=1
+    if grep -q "^PROVE_SH_TIMEOUT" "$out"; then
+      echo "FAIL  $out: $(grep "^PROVE_SH_TIMEOUT" "$out")"
+      fail=1
+    fi
     if grep -qE "WARNING:.*wellformedness" "$out"; then
       echo "FAIL  $out: wellformedness warning"
       fail=1
@@ -272,6 +384,8 @@ for row in "${expectations[@]}"; do
 done
 
 total=${#expectations[@]}
-helpers=$(printf '%s\n' "${expectations[@]}" | grep -cE '\|(code_sources|token_sources|rt_sources|executable|executable_refresh|client_key_secret|code_single_use)\|' || true)
+helpers=$(printf '%s\n' "${expectations[@]}" | grep -cE '\|(code_sources|token_sources|rt_sources|executable|executable_refresh|client_key_secret|agent_key_secret|code_single_use|injection_via_revocation)\|' || true)
 echo "Checked ${total} lemma results: $((total - helpers)) security-property results, ${helpers} helper/sanity lemmas."
+echo "Slowest variants (seconds):"
+tail -n +2 results/timings.tsv | sort -t$'\t' -k2,2nr | head -5 | sed 's/^/  /'
 exit "$fail"

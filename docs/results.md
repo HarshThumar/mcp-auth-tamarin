@@ -1,6 +1,6 @@
 # Results
 
-*All models last checked 14 Nov 2026 with Tamarin 1.12.0 and Maude 3.5.1 (local WSL run; CI runs the same script).* `scripts/prove.sh` (and CI) checks every expectation automatically: **205/205 pass** (83 security-property results, 122 helper or sanity lemmas), with no well-formedness warnings, in about 40 minutes locally with `JOBS=4`. The full Tamarin output is saved in `results/` and uploaded as a CI artifact. Property numbers (P1–P6) are the same in every model; see [flow.md](flow.md) §3.
+*All models last checked 14 Nov 2026 with Tamarin 1.12.0 and Maude 3.5.1 (local WSL run; CI runs the same script).* `scripts/prove.sh` (and CI) checks every expectation automatically: **295/295 pass** (135 security-property results, 160 helper or sanity lemmas) across 8 models, with no well-formedness warnings, in about 60 minutes locally with `JOBS=4`. Every combination of removed checks is in [ablation.md](ablation.md). The full Tamarin output is saved in `results/` and uploaded as a CI artifact. Property numbers (P1–P12) are the same in every model; see [flow.md](flow.md) §3.
 
 ### Model 01: credential binding (revised 14 Nov 2026)
 
@@ -61,6 +61,56 @@ P2 = `rs_accepts_only_authorized`, P2' = `rs_accepts_only_requested`, P3 = `toke
 | `NO_CLIENT_BINDING` | ✅ (22) | ✅ (22) | ✅ (18) | ✅ (15) | R9: ID-JAG `aud` alone suffices |
 | `NO_IDJAG_AUD` + `NO_CLIENT_BINDING` | ✅ (22) | ✅ (22) | ✅ (19) | ❌ falsified (10) | R9: cross-RAS ID-JAG replay |
 | `NO_RESOURCE_CLAIM` | ❌ (by definition) | ❌ falsified (6) | ❌ falsified (8) | ✅ (28) | R10 |
+
+### Model 06: audience injection against a CIMD client (14 Nov 2026)
+
+P7 = `client_authentication`, P3 = `token_secrecy` (a client-credentials token for an honest client). `client_key_secret` and `executable` are verified in every variant. `injection_via_revocation` is an exists-trace test of the attack's shape (see R12).
+
+| Variant | P7 | P3 | Attack shape | Write-up |
+|---|---|---|---|---|
+| fixed (`aud` = validated issuer; AS accepts only its issuer) | ✅ (13) | ✅ (13) | no trace (13) | |
+| `AUD_TOKEN_ENDPOINT` + `AS_LENIENT` (client: `aud` = metadata token endpoint; AS accepts it) | ❌ falsified (9) | ❌ falsified (10) | trace found (12) | R12 |
+| `AUD_TOKEN_ENDPOINT` alone (client sends the token-endpoint `aud`, AS accepts only its issuer) | ✅ (9) | ✅ (8) | no trace (12) | **vacuous**: `executable` fails, the honest client can no longer authenticate (one flag = one check, see [ablation.md](ablation.md)) |
+| `AS_LENIENT` (fixed client; AS accepts issuer **or** token endpoint) | ✅ (23) | ✅ (21) | no trace (24) | R12: the client-side fix suffices |
+| `NO_META_CHECK` (fixed `aud` rule, unvalidated metadata issuer) | ❌ falsified (7) | ❌ falsified (8) | trace found (10) | R12 / R8 |
+
+### Model 05: an AI agent pays under a mandate (UPI-style case study, 14 Nov 2026)
+
+P10 = `debit_within_intent`, P11 = `no_debit_after_revocation`, P12 = `debit_requested_by_agent`. `agent_key_secret` and `executable` are verified in every variant. Each flag removes one check; see [case-study-upi.md](case-study-upi.md) for the story and [ablation.md](ablation.md) for every combination.
+
+| Variant (check removed) | P10 | P11 | P12 | Write-up |
+|---|---|---|---|---|
+| fixed (all checks) | ✅ (20) | ✅ (2) | ✅ (36) | |
+| `NO_CONSENT_BINDING` (AS issues without the principal's approval) | ❌ falsified (12) | ✅ | ✅ | R13 |
+| `NO_PAYEE_CHECK` | ❌ falsified (12) | ✅ | ✅ | R13 |
+| `NO_AMOUNT_CHECK` | ❌ falsified (12) | ✅ | ✅ | R13 |
+| `NO_AUD` (payment server does not check the mandate names it) | ❌ falsified (12) | ✅ | ✅ | R13 |
+| `NO_SENDER_CONSTRAINT` (mandate used as a bearer token) | ✅ | ✅ | ❌ falsified (8) | R13 |
+| `NO_REVOCATION_CHECK` | ✅ | ❌ falsified (14) | ✅ | R13 |
+
+### Model 07: confused deputy at an MCP proxy server (14 Nov 2026)
+
+P8 = `token_only_to_consented_client`, P3 = `token_secrecy` (a token for an honest user and an honest client). `executable` is verified in every variant.
+
+| Variant (check removed) | P8 | P3 | Write-up |
+|---|---|---|---|
+| fixed (per-client consent, exact redirect URI) | ✅ (12) | ✅ (24) | |
+| `CONSENT_NOT_CLIENT_BOUND` ("user has consented", to any client) | ❌ falsified (11) | ✅ | R14 |
+| `NO_REDIRECT_CHECK` | ✅ | ❌ falsified (15) | R14 |
+| both | ❌ falsified (11) | ❌ falsified (15) | R14 |
+
+### Model 08: token passthrough (14 Nov 2026)
+
+P9 = `downstream_only_via_server`, P2 = `server_accepts_only_own_tokens`.
+
+| Variant | executable | P9 | P2 | Write-up |
+|---|---|---|---|---|
+| fixed (server checks `aud`, exchanges its token, downstream checks `aud`) | ✅ | ✅ (10) | ✅ (4) | |
+| `S_NO_AUD` | ✅ | ✅ | ❌ falsified (6) | R15 |
+| `PASSTHROUGH` alone | ❌ **vacuous** (no honest run) | ✅ | ✅ | R15 |
+| `D_NO_AUD` | ✅ | ❌ falsified (6) | ✅ | R15 |
+| `PASSTHROUGH` + `D_NO_AUD` | ✅ | ❌ falsified (6) | ✅ | R15 |
+| all three | ✅ | ❌ falsified (6) | ❌ falsified (6) | R15 |
 
 ## Findings and open questions
 
@@ -154,6 +204,31 @@ The variant table shows which checks are needed for which client. For a **public
 - **What the model shows:** an AS that accepts any `redirect_uri` for an honest client lets the attacker send an honest user a crafted authorization link with the attacker's redirect URI and the attacker's own PKCE challenge. The user approves, the code goes to the attacker, and the attacker redeems it with its own verifier. PKCE does not help, because the attacker chose the challenge. PKCE only protects codes from flows the client started itself.
 - **Scope:** the user is assumed to approve the request (as in the mix-up setting, G8). Browser internals (cookies, origins, open redirectors on the client side) are not modelled.
 - **Is it new?** No. It is the redirect URI manipulation attack of RFC 9700 §4.1.
+
+### R12 (14 Nov 2026): audience injection works against a CIMD client unless the assertion `aud` is the validated issuer
+- **Model + lemmas:** 06. `-D=AUD_TOKEN_ENDPOINT -D=AS_LENIENT` (client sends the token-endpoint `aud`, AS accepts it): P7 falsified (9 steps), P3 falsified (10 steps). `-D=NO_META_CHECK`: P7 falsified (7), P3 falsified (8). Fixed and `-D=AS_LENIENT`: verified.
+- **What the specs say:** RFC 7523 §3 lets the assertion `aud` be the AS's token endpoint URL; OIDC Core §9 says it "SHOULD" be. draft-ietf-oauth-rfc7523bis-10 makes the AS issuer the only allowed value. CIMD draft-03 lets a client use `private_key_jwt` with keys from its metadata document, and the same `client_id` and key work at every AS. The MCP draft does not say which `aud` value an MCP client must use.
+- **What the model shows:** a malicious MCP server names an attacker-run AS whose metadata keeps its own issuer and revocation endpoint but lists the **honest** AS's token endpoint. A client that sets `aud` to "the token endpoint URL from the metadata" sends a revocation request (RFC 7009, client-authenticated) to the attacker with an assertion whose `aud` is the honest AS's token endpoint. The attacker replays it at the honest AS's token endpoint in a client-credentials grant and gets a token for the client's own resources. This is the two-phase structure of the paper; the exists-trace lemma `injection_via_revocation` confirms the trace goes through the attacker's revocation endpoint. With `aud` = the validated issuer, the assertion names the attacker's issuer and the honest AS rejects it, **even if that AS still accepts token-endpoint audiences** (`AS_LENIENT`): the client-side fix is sufficient on its own, matching the paper's point that AS-side fixes alone are not (§5). If the client does not validate the metadata issuer (`NO_META_CHECK`), the attacker AS claims the honest issuer and the fixed `aud` rule fails too, the same dependency as R8.
+- **Scope:** the second phase is the client-credentials grant (client impersonation). The paper's other second phases (authorization code via PAR, CIBA, device flow) are not modelled. `jti` replay caches are not modelled; the leaked assertion has never been used at the honest AS, so a cache would not stop it.
+- **Is it new?** No. It is the audience-injection attack class (Hosseyni, Küsters, Würtele, IEEE S&P 2026, ePrint 2025/629) and the rfc7523bis fix. The paper has no formal proof; we couldn't find a machine-checked analysis of the attack or of the fix in the CIMD/MCP setting, where one key at many ASes is the default.
+- **Next step:** spec question for the MCP draft: should it require `aud` = the AS issuer for `private_key_jwt` assertions, referencing rfc7523bis? Candidate conformance test (client side).
+
+### R13 (14 Nov 2026): agent payment mandate (case study): which check stops which loss
+- **Model + lemmas:** 05. Every one of the four "debit inside the intent" checks (principal's approval at the AS, payee, amount cap, payment-server audience) is necessary on its own for P10: removing any one gives a 12-step attack. Proof of possession is needed for P12 only: without it, the attacker takes a leaked payment request and re-submits it with a fresh payment id, so the payment server's one-time payment-id check does not help (8 steps). The online revocation check is needed for P11 only (14 steps).
+- **What the specs say:** draft-mishra-oauth-agent-grants-02 has `aud`, sender-constrained tokens and "no consent substitution" as MUSTs, but no mandate object: payee and amount limits are left to RFC 9396 `authorization_details`, and the resource server checks revocation status only "when the deployment's risk model requires online state". The NPCI UPI Circle delegated-payment rules (per-payment validation, caps, delinking) are known to us only from a secondary summary.
+- **Is it new?** No new attack: each failure is a textbook consequence of dropping that check. What the model adds is the check-by-property table for an agent-payment mandate, machine-checked; we couldn't find prior formal work on UPI-style agent mandates (arXiv 2609.00060 covers x402/MPP/ACP/AP2, not UPI).
+- **Next step:** an honest note to the draft author that revocation-status checking is not required for payment mandates (P11 depends on it); case study write-up.
+
+### R14 (14 Nov 2026): MCP proxy confused deputy: per-client consent and exact redirect URIs protect different things
+- **Model + lemmas:** 07. If the proxy's consent record is not bound to the client (`CONSENT_NOT_CLIENT_BOUND`), an attacker registers its own client, gets the user to click a crafted authorization link, and the proxy issues a token for that user to the attacker's client (P8 falsified, 11 steps). If the proxy does not require the exact registered redirect URI (`NO_REDIRECT_CHECK`), per-client consent does not help: the attacker uses an honest client the user already approved, its own redirect URI and its own PKCE challenge, and gets that honest client's token for the user (P3 falsified, 15 steps). Each check stops one attack; both are needed.
+- **What the specs say:** MCP Security Best Practices, "Confused Deputy Problem": per-client consent MUST, consent cookies bound to the `client_id` "not just 'user has consented'", exact redirect URI matching MUST.
+- **Is it new?** No. It is the attack described in the MCP Security Best Practices, which already prescribes both mitigations. The model is a machine-checked confirmation that each listed mitigation is necessary and that together they suffice in this abstraction (third-party consent cookie always present).
+
+### R15 (14 Nov 2026): token passthrough only works when the downstream audience check is off, and then the MCP server can be bypassed
+- **Model + lemmas:** 08. With the downstream API checking `aud`, a passthrough server cannot work at all (`executable` fails). Passthrough needs `D_NO_AUD`, and with `D_NO_AUD` (passthrough or not) a token a client gave to a malicious MCP server is used directly at the downstream API, which acts for the user without the honest MCP server's decision (P9 falsified, 6 steps). The MCP server's own audience check protects a different property (P2; `S_NO_AUD` falsifies it, as in model 02 `NO_AUD`) and does not affect P9.
+- **What the specs say:** the MCP Security Best Practices list "Security Control Circumvention" as a passthrough risk and forbid passthrough; MCP Token Handling requires audience validation at the MCP server.
+- **Is it new?** No. It restates the spec's rationale as a machine-checked statement: the check that stops circumvention is the downstream API's audience check, and passthrough is exactly the design that needs that check turned off.
+- **Scope step-up (W3c) was not modelled separately.** By reading the spec: the client treats a challenged `scope` as authoritative, but the resulting token is still audience-bound to the server that challenged it (RFC 8707). A malicious server can make the client ask for broad scopes, but the token is only useful at that server unless audience binding fails, which is P2/P3 of models 02 and 08. This is an argument, not a proof.
 
 ## Modelling notes
 

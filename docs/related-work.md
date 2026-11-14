@@ -58,6 +58,18 @@
 
 **R10** (optional `resource` leads to broad-token replay) is described informally in the ID-JAG draft's security considerations, so it is partly covered at the informal level.
 
+**R12–R15 (added 14 Nov 2026) are confirmations, not candidates.**
+- **R12** (audience injection, model 06) is the Hosseyni–Küsters–Würtele attack class and the rfc7523bis fix. The only thing we add is a machine-checked model in the CIMD/MCP setting.
+- **R14** (proxy confused deputy, model 07) is the attack in the MCP Security Best Practices. Its two prescribed mitigations are each machine-checked as necessary for one property.
+- **R15** (token passthrough, model 08) restates the spec's "Security Control Circumvention" rationale.
+- **R13** (agent payment mandate, model 05, case study) contains no new attacks. Each attack follows from dropping one check.
+- Related work for R13:
+  - arXiv 2609.00060 models x402/MPP/ACP/AP2 in Tamarin (no UPI, no OAuth agent grants).
+  - arXiv 2608.23858 ("Beyond the Mandate") analyses AP2 informally.
+  - draft-mishra-oauth-agent-grants-02 has no mandate object.
+  - We couldn't find formal work on UPI-style delegated or agent payments. The NPCI rules are known to us only from a secondary summary.
+  - Not yet checked: Visa Intelligent Commerce and Mastercard Agent Pay specifications.
+
 ## Corrections this review triggered
 
 - **CIMD requires `iss`.** CIMD draft-03 §7 says the authorization response "MUST include the `iss` parameter" (verified 14 Nov 2026). The MCP draft's "SHOULD" (R3, G1) therefore applies to ASes serving pre-registered or DCR clients. An AS that follows CIMD must send `iss` to CIMD clients. Model 03 already assumes honest ASes always send `iss`. R3 and G1 have been annotated.
