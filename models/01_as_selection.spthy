@@ -4,7 +4,13 @@ begin
 /*
  * Model 01: which authorization server receives the client's credentials?
  *
- * Spec pinned: RFC 9728 and MCP authorization, draft as of 11 Nov 2026
+ * Spec pinned: RFC 9728 and MCP authorization, draft as of 14 Nov 2026
+ *   - Client Registration, "Authorization Server Binding": pre-registered and
+ *     DCR credentials "MUST" be associated with the AS that issued them,
+ *     keyed by the AS's `issuer` identifier.
+ *   - The client "MUST record the issuer value from the selected
+ *     authorization server's validated metadata document" (RFC 8414 §3.3:
+ *     the metadata `issuer` must equal the issuer the client discovered).
  *
  * Context
  *   In MCP, the server a client connects to tells the client which
@@ -17,86 +23,109 @@ begin
  *   authorization server they belong to", so a malicious MCP server could
  *   name its own AS and receive credentials meant for the real one.
  *
- * Abstraction (deliberately small; see docs/threat-model.md)
- *   - A client credential (client_secret, code_verifier, signed assertion...)
- *     is a single fresh secret bound at registration time to one AS.
- *   - The network, including all metadata, is controlled by the attacker
- *     (Dolev-Yao). The attacker can also run its own AS.
- *   - Requests to an honest AS travel over TLS: modelled as a private
- *     channel fact ToAS(...). A dishonest AS simply leaks what it receives.
+ * Property
+ *   P1 client_credential_secrecy: a credential registered at an honest AS
+ *      never reaches the attacker.
  *
- * Variants (Tamarin preprocessor flag)
- *   tamarin-prover --prove models/01_as_selection.spthy -D=VULNERABLE
- *       client sends a stored credential to whatever AS the metadata names
- *       expected: client_credential_secrecy FALSIFIED
- *   tamarin-prover --prove models/01_as_selection.spthy
- *       client only sends a credential to the AS it was registered with
- *       expected: client_credential_secrecy VERIFIED
+ * Variants (Tamarin preprocessor flags)
+ *   -D=VULNERABLE          the client sends its stored credential to whatever
+ *                          AS the MCP server names (no binding at all).
+ *                          Ground truth: GHSA-qx49-fqc8-xw99.
+ *                          expected: P1 FALSIFIED
+ *   -D=UNVALIDATED_ISSUER  credentials are keyed by issuer, but the client
+ *                          looks them up under the `issuer` the AS metadata
+ *                          *claims*, without the RFC 8414 §3.3 check.
+ *                          expected: P1 FALSIFIED (an attacker-run AS claims
+ *                          the honest AS's issuer)
+ *   (no flag)              keyed by issuer AND the metadata issuer is
+ *                          validated against the AS the client contacts.
+ *                          expected: P1 verified
+ *
+ * Abstraction (deliberately small; see docs/threat-model.md)
+ *   - A client credential (client_secret, private_key_jwt key, ...) is one
+ *     fresh secret, stored under the issuer of the AS it was registered at.
+ *   - Dolev-Yao network; all metadata is attacker-controlled. An attacker-run
+ *     AS publishes metadata with ANY `issuer` value. Honest AS metadata is
+ *     correct (issuer = its own identifier).
+ *   - Requests to an AS travel over TLS: private fact ToAS. A dishonest AS
+ *     leaks what it receives.
+ *   - The two client checks are restrictions on one action each
+ *     (CredLookup, MetaIssuer), so each flag removes exactly one equality.
+ *   - Model 03 (`RT_UNBOUND`, `NO_META_CHECK`) is the full version of this
+ *     question, with codes, tokens and refresh tokens.
  */
 
-// The client registers with an authorization server and obtains a credential
-// bound to that AS.
-rule Register_Client:
-    [ Fr(~cred) ]
-  --[ Registered($C, $AS, ~cred) ]->
-    [ !ClientCred($C, $AS, ~cred) ]
-
-// The attacker may control any authorization server, e.g. one it set up itself.
-rule Compromise_AS:
+rule Setup_Honest_AS:
     [ ]
-  --[ Compromised($X) ]->
-    [ !Dishonest($X) ]
+  --[ ASSetup($A), AS_Honest($A) ]->
+    [ !HonestAS($A), !ASMeta($A, $A) ]
+
+// Attacker-run AS: its metadata may claim any issuer $I.
+rule Setup_Dishonest_AS:
+    [ ]
+  --[ ASSetup($X), AS_Dishonest($X) ]->
+    [ !DishonestAS($X), !ASMeta($X, $I) ]
+
+restriction as_set_up_once:
+  "All x #i #j. ASSetup(x) @ #i & ASSetup(x) @ #j ==> #i = #j"
+
+// The client registers at an honest AS; the credential is stored under that
+// AS's issuer.
+rule Register_Client:
+    [ !HonestAS($A), Fr(~cred) ]
+  --[ Registered($C, $A, ~cred) ]->
+    [ !ClientCred($C, $A, ~cred) ]
 
 #ifdef VULNERABLE
-
-// VULNERABLE: the client trusts the AS named in the (attacker-controlled)
-// protected resource metadata, and sends a credential registered elsewhere.
-rule Client_Token_Request_Unbound:
-    [ !ClientCred($C, $ASreg, cred)
-    , In(<'prm', $RS, $ASnamed>)
-    ]
-  --[ CredentialSent($C, $ASnamed, cred) ]->
-    [ ToAS($ASnamed, <'token_request', $C, cred>) ]
-
 #else
-
-// FIXED: the credential is bound to its AS. The client only uses it when the
-// metadata names that same AS (issuer + credential binding).
-rule Client_Token_Request_Bound:
-    [ !ClientCred($C, $AS, cred)
-    , In(<'prm', $RS, $AS>)
-    ]
-  --[ CredentialSent($C, $AS, cred) ]->
-    [ ToAS($AS, <'token_request', $C, cred>) ]
-
+// Credentials are looked up under the issuer recorded for this AS.
+restriction credential_bound_to_issuer:
+  "All stored rec #t. CredLookup(stored, rec) @ #t ==> stored = rec"
 #endif
+
+#ifdef VULNERABLE | UNVALIDATED_ISSUER
+#else
+// RFC 8414 §3.3: the metadata issuer must be the AS the client contacts.
+restriction metadata_issuer_validated:
+  "All a i #t. MetaIssuer(a, i) @ #t ==> a = i"
+#endif
+
+// A (possibly malicious) MCP server names AS $AS2 in its metadata; the client
+// fetches $AS2's metadata (claimed issuer $I) and decides whether to send the
+// credential it stored under $A.
+rule Client_Token_Request:
+    [ !ClientCred($C, $A, cred)
+    , In(<'prm', $RS, $AS2>)
+    , !ASMeta($AS2, $I)
+    ]
+  --[ MetaIssuer($AS2, $I), CredLookup($A, $I), CredentialSent($C, $AS2, cred) ]->
+    [ ToAS($AS2, <'token_request', $C, cred>) ]
 
 // An honest AS accepts a request carrying a credential it issued.
 rule AS_Accepts:
-    [ ToAS($AS, <'token_request', $C, cred>)
-    , !ClientCred($C, $AS, cred)
+    [ ToAS($A, <'token_request', $C, cred>)
+    , !HonestAS($A)
+    , !ClientCred($C, $A, cred)
     ]
-  --[ TokenIssued($C, $AS) ]->
+  --[ TokenIssued($C, $A) ]->
     [ ]
 
 // A dishonest AS hands whatever it receives to the attacker.
 rule Dishonest_AS_Leaks:
-    [ ToAS($X, m), !Dishonest($X) ]
+    [ ToAS($X, m), !DishonestAS($X) ]
   --[ Leaked($X) ]->
     [ Out(m) ]
 
-// Sanity check: an honest run (no compromise at all) can complete.
+// Sanity check: an honest run can complete.
 lemma executable:
   exists-trace
   "Ex C A #i. TokenIssued(C, A) @ #i
-     & not (Ex X #k. Compromised(X) @ #k)"
+     & not (Ex X #k. AS_Dishonest(X) @ #k)"
 
-// Security property: a client credential stays secret unless the very AS it
-// was registered with is compromised.
+// P1: a credential registered at an honest AS never reaches the attacker.
 lemma client_credential_secrecy:
   "All C A cred #i.
      Registered(C, A, cred) @ #i
-     ==> ( not (Ex #j. K(cred) @ #j) )
-       | ( Ex #k. Compromised(A) @ #k )"
+     ==> not (Ex #j. K(cred) @ #j)"
 
 end

@@ -3,7 +3,7 @@
 ## Attacker
 
 - **Network:** Dolev-Yao. The attacker reads, blocks, modifies and injects all messages on public channels, including every metadata document (protected resource metadata, AS metadata, client metadata documents).
-- **Malicious parties:** the attacker can run its own MCP servers and authorization servers. In models 02–04 it can also register its own clients, which obtain real codes and tokens at honest servers. In models 02 and 04 it also controls some user accounts (`User_Dishonest`). Model 01 has only attacker-run ASes (`Compromise_AS`).
+- **Malicious parties:** the attacker can run its own MCP servers and authorization servers. In models 02–04 it can also register its own clients, which obtain real codes and tokens at honest servers. In models 02 and 04 it also controls some user accounts (`User_Dishonest`). Model 01 has only attacker-run ASes, whose metadata may claim any issuer.
 - **Honest parties:** an honest AS or honest MCP server follows the spec and talks over TLS. TLS is modelled as a private channel to the named endpoint.
 - **Cryptography is perfect** (symbolic model): no hash collisions, no forged signatures without the key.
 - **Well-formedness:** every model passes all of Tamarin's well-formedness checks, including the full message-derivation check (`--derivcheck-timeout=0`). `scripts/prove.sh` fails if any warning appears.
@@ -24,7 +24,7 @@ Each model should **rediscover a known, already-fixed issue** when the fix is re
 
 | Model | Known issue used as ground truth |
 |---|---|
-| 01 | [GHSA-qx49-fqc8-xw99](https://github.com/modelcontextprotocol/python-sdk/security/advisories/GHSA-qx49-fqc8-xw99): credentials not bound to their AS |
+| 01 | [GHSA-qx49-fqc8-xw99](https://github.com/modelcontextprotocol/python-sdk/security/advisories/GHSA-qx49-fqc8-xw99): credentials not bound to their AS (`VULNERABLE`). `UNVALIDATED_ISSUER` is not a bug report: a binding keyed by an issuer taken from unvalidated metadata (R0) |
 | 02 `NO_AUD` | [GHSA-w4fh-qvv9-3v23](https://github.com/advisories/GHSA-w4fh-qvv9-3v23) (Python SDK, CVE-2026-116684) / [GHSA-rvq5-wwqv-78pq](https://github.com/advisories/GHSA-rvq5-wwqv-78pq) (TypeScript SDK, CVE-2026-111771): server accepts tokens issued for another resource (confirmed 11 Nov 2026) |
 | 02 `NO_ISS` | AS mix-up attack ([RFC 9700 §4.4](https://datatracker.ietf.org/doc/html/rfc9700#section-4.4), [RFC 9207](https://datatracker.ietf.org/doc/rfc9207/)): PKCE alone does not stop it |
 | 02 `ISS_OPTIONAL` | Not a bug report: checks the MCP draft's current text, where the AS only SHOULD send `iss` and the client proceeds when `iss` is absent and not advertised. This is a known RFC 9207 limitation, and the draft already says a future revision is expected to make `iss` a MUST |

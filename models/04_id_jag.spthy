@@ -38,7 +38,7 @@ equations: unat(at(x)) = x
  *   P3 token_secrecy: an access token from an honest RAS, held by an honest
  *      client, whose (actual) audience is an honest MCP server, never
  *      reaches the attacker.
- *   P4 ras_grant_agreement: an honest RAS only issues a token for user U to
+ *   P5 ras_grant_agreement: an honest RAS only issues a token for user U to
  *      client c if the IdP issued an ID-JAG for U naming this RAS as `aud`
  *      and c as `client_id`.
  *
@@ -61,7 +61,7 @@ equations: unat(at(x)) = x
  *     and which user it is serving.
  *     Attacker-controlled users ($U with User_Dishonest) may sign in to
  *     attacker-run clients: the IdP then issues real ID-JAGs to the attacker
- *     (client_id = the attacker's client). P2', P4 are stated for honest
+ *     (client_id = the attacker's client). P2', P5 are stated for honest
  *     users; honest users only sign in to honest clients.
  *   - Worst-case IdP policy: it issues an ID-JAG for any `audience` and
  *     `resource` the honest client asks for (the draft's "SHOULD check
@@ -357,7 +357,7 @@ lemma token_secrecy:
      & not (Ex #j. RS_Dishonest(rs) @ #j)
      ==> not (Ex #k. K(t) @ #k)"
 
-// P4: an honest RAS issues a token for an honest user U to client c only if the IdP issued
+// P5: an honest RAS issues a token for an honest user U to client c only if the IdP issued
 // an ID-JAG for U with aud = this RAS and client_id = c.
 lemma ras_grant_agreement:
   "All t a u c aud #i.

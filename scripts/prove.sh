@@ -13,6 +13,8 @@ expectations=(
   "models/01_as_selection.spthy|VULNERABLE|executable|verified"
   "models/01_as_selection.spthy|VULNERABLE|client_credential_secrecy|falsified"
   "models/01_as_selection.spthy|-|executable|verified"
+  "models/01_as_selection.spthy|UNVALIDATED_ISSUER|executable|verified"
+  "models/01_as_selection.spthy|UNVALIDATED_ISSUER|client_credential_secrecy|falsified"
   "models/01_as_selection.spthy|-|client_credential_secrecy|verified"
   "models/02_code_and_audience.spthy|NO_AUD|code_sources|verified"
   "models/02_code_and_audience.spthy|NO_AUD|token_sources|verified"

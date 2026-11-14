@@ -30,13 +30,18 @@ Parties: **U** user (browser), **C** MCP client, **RS** MCP server (resource ser
 | E2 | C → AS | JWT bearer grant (RFC 7523) presenting the ID-JAG | RFC 7523 |
 | E3 | AS → C | Access token for RS | |
 
-Check the exact parameters against the extension text before modelling (planned: model 04).
+Modelled in model 04 (see [threat-model.md](threat-model.md) for the parameters used).
 
-## 3. Properties to state (draft)
+## 3. Properties (one numbering for all models)
 
-- **P1 credential binding:** a client credential (secret, code, `code_verifier`, signed assertion) is only revealed to the AS it belongs to. → model 01
-- **P2 code/token injection:** a code or token issued for RS₁ is never accepted by RS₂ (audience). → model 02
-- **P3 mix-up:** C never redeems a code at an AS other than the one that issued it (`iss`). → model 02
-- **P4 CIMD:** one client identity across ASes does not let AS₁ act as C at AS₂. → model 03
-- **P5 enterprise chain:** an ID-JAG for RS₁/AS₁ cannot be replayed to obtain access at RS₂/AS₂. → model 04
-- **P6 session integrity:** if an honest user's client session with an honest AS ends with a token, that AS issued it for that user and client (no code injection / login CSRF). → model 02
+| # | Property | Lemma(s) |
+|---|---|---|
+| P1 | **Credential binding:** a client credential is only revealed to the AS it belongs to. | 01 `client_credential_secrecy` |
+| P2 | **Right resource:** an honest MCP server only accepts a token for user U if U authorized access to *that* server. | 02, 03 `rs_accepts_only_consented`; 04 `rs_accepts_only_authorized` |
+| P2' | **Requested resource:** as P2, but "authorized" = some client acting for U set out to use that server (needed when `resource` is optional). | 04 `rs_accepts_only_requested` |
+| P3 | **Access-token secrecy (covers mix-up):** a token for an honest user, client and MCP server never reaches the attacker. | 02, 03, 04 `token_secrecy` (03: `token_secrecy_attack` in two variants) |
+| P4 | **Refresh-token secrecy (CIMD):** one client identity across ASes does not leak a refresh token issued by AS₁ to AS₂. | 03 `refresh_token_secrecy` (`refresh_token_secrecy_attack` in two variants) |
+| P5 | **Enterprise grant agreement:** an honest RAS issues a token for U to client C only on an ID-JAG issued for U, that RAS and C (no cross-RAS replay). | 04 `ras_grant_agreement` |
+| P6 | **Session integrity:** if an honest user's client session with an honest AS ends with a token, that AS issued it for that user and client (no code injection / login CSRF). | 02 `session_integrity` |
+
+Helper and sanity lemmas (`*_sources`, `executable*`, `client_key_secret`, `code_single_use`) are not properties; `scripts/prove.sh` counts them separately.

@@ -29,11 +29,10 @@ This document provides the Domain-Driven Design (DDD) traceability matrix betwee
 
 | Step # | Protocol Action | RFC / Spec | Exact Tamarin Rule | State Preconditions & Effects |
 |---|---|---|---|---|
-| S1.1 | Client registers with honest AS | RFC 7591 §3 | `Register_Client` | Generates fresh credential `~cred`, records `!ClientCred($C, $AS, ~cred)`. |
-| S1.2 | Attacker deploys dishonest AS | Threat model | `Compromise_AS` | Marks endpoint `!Dishonest($X)`. |
-| S1.3 | Client fetches PRM & sends credential (Vulnerable) | GHSA-qx49-fqc8-xw99 | `Client_Token_Request_Unbound` | Consumes PRM without checking AS binding; sends `cred` to `$ASnamed`. |
-| S1.4 | Client fetches PRM & sends credential (Bound / Fixed) | RFC 9728 + Fix | `Client_Token_Request_Bound` | Validates that `$AS` in metadata matches `!ClientCred($C, $AS, cred)`. |
-| S1.5 | Honest AS processes credential | OAuth 2.1 | `AS_Accepts` | Verifies credential match and emits `TokenIssued($C, $AS)`. |
+| S1.1 | AS setup and metadata | RFC 8414 | `Setup_Honest_AS`, `Setup_Dishonest_AS` | Honest AS metadata names itself as `issuer`; attacker-run AS metadata claims any issuer `$I`. |
+| S1.2 | Client registers with honest AS | RFC 7591 §3, MCP Client Registration | `Register_Client` | Generates fresh credential `~cred`, stored under the AS issuer: `!ClientCred($C, $A, ~cred)`. |
+| S1.3 | Client fetches PRM and AS metadata, sends credential | RFC 9728, RFC 8414 §3.3, GHSA-qx49-fqc8-xw99 | `Client_Token_Request` | Emits `CredLookup($A, $I)` (restriction `credential_bound_to_issuer`, off under `VULNERABLE`) and `MetaIssuer($AS2, $I)` (restriction `metadata_issuer_validated`, off under `VULNERABLE` and `UNVALIDATED_ISSUER`). |
+| S1.4 | Honest AS processes credential | OAuth 2.1 | `AS_Accepts` | Verifies credential match and emits `TokenIssued($C, $A)`. |
 | S1.6 | Dishonest AS leaks to network | Dolev-Yao | `Dishonest_AS_Leaks` | Leaks raw secret to public channel `Out(m)`. |
 
 ---
@@ -63,18 +62,17 @@ This document provides the Domain-Driven Design (DDD) traceability matrix betwee
 ### Model 01 Lemmas
 
 ```tamarin
-// Executability sanity check: an uncompromised run can issue tokens.
+// Executability sanity check: an honest run can issue tokens.
 lemma executable:
   exists-trace
   "Ex C A #i. TokenIssued(C, A) @ #i
-     & not (Ex X #k. Compromised(X) @ #k)"
+     & not (Ex X #k. AS_Dishonest(X) @ #k)"
 
-// Secrecy (P1): client credential stays secret unless the registered AS is compromised.
+// Secrecy (P1): a credential registered at an honest AS never reaches the attacker.
 lemma client_credential_secrecy:
   "All C A cred #i.
      Registered(C, A, cred) @ #i
-     ==> ( not (Ex #j. K(cred) @ #j) )
-       | ( Ex #k. Compromised(A) @ #k )"
+     ==> not (Ex #j. K(cred) @ #j)"
 ```
 
 ### Model 02 Lemmas

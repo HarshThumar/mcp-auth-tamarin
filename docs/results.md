@@ -1,13 +1,18 @@
 # Results
 
-*All models last checked 14 Nov 2026 with Tamarin 1.12.0 and Maude 3.5.1 (local WSL run; CI runs the same script).* `scripts/prove.sh` (and CI) checks every expectation automatically: **196/196 pass** (79 security-property results, 117 helper or sanity lemmas), with no well-formedness warnings, in about 40 minutes locally with `JOBS=4`. The full Tamarin output is saved in `results/` and uploaded as a CI artifact.
+*All models last checked 14 Nov 2026 with Tamarin 1.12.0 and Maude 3.5.1 (local WSL run; CI runs the same script).* `scripts/prove.sh` (and CI) checks every expectation automatically: **198/198 pass** (80 security-property results, 118 helper or sanity lemmas), with no well-formedness warnings, in about 40 minutes locally with `JOBS=4`. The full Tamarin output is saved in `results/` and uploaded as a CI artifact. Property numbers (P1–P6) are the same in every model; see [flow.md](flow.md) §3.
 
-| Model | Variant | Lemma | Expected | Actual | Notes |
-|---|---|---|---|---|---|
-| 01 | VULNERABLE | executable | verified | ✅ verified | sanity check |
-| 01 | VULNERABLE | client_credential_secrecy | **falsified** | ✅ falsified (attack found) | attack: malicious RS names its own AS |
-| 01 | fixed | executable | verified | ✅ verified | |
-| 01 | fixed | client_credential_secrecy | verified | ✅ verified | credential bound to its AS |
+### Model 01: credential binding (revised 14 Nov 2026)
+
+P1 = `client_credential_secrecy`. `executable` is verified in every variant.
+
+| Variant | P1 | Notes |
+|---|---|---|
+| `VULNERABLE` | ❌ falsified (4) | no binding: a malicious MCP server names its own AS (GHSA-qx49-fqc8-xw99) |
+| `UNVALIDATED_ISSUER` | ❌ falsified (4) | R0: credentials keyed by issuer, but looked up under the issuer the AS metadata *claims* |
+| fixed | ✅ verified (3) | keyed by issuer, and the metadata issuer validated (RFC 8414 §3.3) |
+
+**R0 (14 Nov 2026): a binding keyed by an unvalidated issuer is no binding.** An attacker-run AS publishes metadata whose `issuer` is the honest AS's issuer. A client that keys credentials by issuer but takes that issuer from the metadata without the RFC 8414 §3.3 check looks up the honest AS's credential and sends it to the attacker. Both checks together are needed. Not new: the MCP draft already requires the issuer to come from *validated* metadata; model 03 R8 shows the same failure for codes, tokens and refresh tokens.
 
 ### Model 02: code and token binding, session integrity (revised 14 Nov 2026)
 
@@ -46,9 +51,9 @@ P3 = `token_secrecy`, P4 = `refresh_token_secrecy`. In every variant below, the 
 
 ### Model 04: Enterprise-Managed Authorization / ID-JAG (14 Nov 2026)
 
-P2 = `rs_accepts_only_authorized`, P2' = `rs_accepts_only_requested`, P3 = `token_secrecy`, P4 = `ras_grant_agreement`. `token_sources` and `executable` are verified in every variant. The attacker registers its own clients and controls some user accounts, which hold genuine ID-JAGs (revised 14 Nov; results unchanged from the first version without them).
+P2 = `rs_accepts_only_authorized`, P2' = `rs_accepts_only_requested`, P3 = `token_secrecy`, P5 = `ras_grant_agreement`. `token_sources` and `executable` are verified in every variant. The attacker registers its own clients and controls some user accounts, which hold genuine ID-JAGs (revised 14 Nov; results unchanged from the first version without them).
 
-| Variant | P2 | P2' | P3 | P4 | Write-up |
+| Variant | P2 | P2' | P3 | P5 | Write-up |
 |---|---|---|---|---|---|
 | fixed | ✅ (21) | ✅ (21) | ✅ (16) | ✅ (14) | |
 | `NO_IDJAG_AUD` | ✅ (21) | ✅ (21) | ✅ (17) | ✅ (16) | R9: client binding alone suffices |
@@ -128,7 +133,7 @@ The variant table shows which checks are needed for which client. For a **public
 - **Is it new?** No. The spec already warns about it, and RFC 8414 §3.3 exists for this reason. The model gives a machine-checked trace for the warning.
 
 ### R9 (14 Nov 2026): ID-JAG: either RAS check alone stops cross-RAS replay
-- **Model + lemma:** 04. `-D=NO_IDJAG_AUD` and `-D=NO_CLIENT_BINDING` alone: all verified. Both together: `ras_grant_agreement` (P4) falsified (10 steps).
+- **Model + lemma:** 04. `-D=NO_IDJAG_AUD` and `-D=NO_CLIENT_BINDING` alone: all verified. Both together: `ras_grant_agreement` (P5) falsified (10 steps).
 - **What the spec says:** the RAS "MUST" check that the ID-JAG `aud` is its own issuer, and "MUST" reject it unless the `client_id` claim identifies the authenticated client (draft-ietf-oauth-identity-assertion-authz-grant-06 §4.4.1).
 - **What the model shows:** a malicious MCP server names an attacker-run RAS. The honest client gets an ID-JAG for it and sends it there; the attacker replays it at an honest RAS while authenticating as its own client. With both checks off, the honest RAS issues a token for the user to the attacker's client. Either check alone stops it: the `aud` check rejects the foreign ID-JAG, and client binding rejects it because the attacker cannot authenticate as the honest client (its assertions are bound to the attacker RAS). P3 stays verified because the replayed ID-JAG names the attacker's MCP server as `resource`.
 - **Is it new?** No. It is the replay/audience-injection class the draft's checks are written against; the model shows the two checks are redundant with each other in this setting.
