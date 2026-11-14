@@ -1,6 +1,6 @@
 # Related work (T60) — DRAFT
 
-*Draft of 14 Nov 2026, not yet checked line by line by the author. Every link below was opened during the review unless marked "(snippet only)" or "(not read)". Several primary PDFs could not be read (HTTP 403); those claims come from abstract pages or from IETF drafts that cite the papers. Re-read the primary sources before citing any of this in a paper.*
+*Draft of 14 Nov 2026. Every link below was opened during the review unless marked "(snippet only)" or "(not read)". Where a primary PDF was not read, the claim comes from the abstract page or from a paper or IETF draft that cites it. Re-read the primary sources before citing any of this in a paper.*
 
 ## Summary
 
@@ -18,9 +18,9 @@
 | Fett, Küsters, Schmitz, "A Comprehensive Formal Security Analysis of OAuth 2.0", CCS 2016. [arXiv:1601.01229](https://arxiv.org/abs/1601.01229) | Web Infrastructure Model (WIM), manual proofs | OAuth 2.0 grant types; malicious RPs, IdPs and browsers; authorization, authentication, session integrity; mix-up and the `iss` defence | R2–R5 conceptually, in generic OAuth. No MCP, no RS-driven AS discovery. |
 | Fett, Küsters, Schmitz, "The Web SSO Standard OpenID Connect: In-Depth Formal Security Analysis and Security Guidelines", CSF 2017. [arXiv:1704.08539](https://arxiv.org/abs/1704.08539) | WIM | OpenID Connect | Background |
 | Fett, Hosseyni, Küsters, "An Extensive Formal Security Analysis of the OpenID Financial-grade API", IEEE S&P 2019. [arXiv:1901.11520](https://arxiv.org/abs/1901.11520) | WIM | FAPI 1.0; attacks on authorization and session integrity | Background (same style of result as R2–R5) |
-| Hosseyni, Küsters, Würtele, "Formal Security Analysis of the OpenID FAPI 2.0 Family of Protocols", CSF 2024. [ePrint 2024/078](https://eprint.iacr.org/2024/078); full version [ePrint 2024/1540](https://eprint.iacr.org/2024/1540) | WIM | FAPI 2.0, FAPI-CIBA | Background. Coverage of `private_key_jwt` + mix-up **not verified** (PDF not read). |
+| Hosseyni, Küsters, Würtele, "Formal Security Analysis of the OpenID FAPI 2.0 Family of Protocols", CSF 2024. [ePrint 2024/078](https://eprint.iacr.org/2024/078); full version [ePrint 2024/1540](https://eprint.iacr.org/2024/1540) | WIM, manual proofs | FAPI 2.0, FAPI-CIBA | Per the audience-injection paper (§6.2), this is the only prior formal analysis that considered `private_key_jwt`, and the draft it analysed already used the issuer as `aud`. So the issuer-as-`aud` fix has a pen-and-paper proof for FAPI 2.0 (one AS family, not CIMD/MCP). PDF itself not read. |
 | Helmschmidt, Hosseyni, Küsters, Pruiksma, Waldmann, Würtele, "The Grant Negotiation and Authorization Protocol: Attacking, Fixing, and Verifying an Emerging Standard", ESORICS 2023. [ePrint 2023/1325](https://eprint.iacr.org/2023/1325) | WIM | GNAP | None directly |
-| Hosseyni, Küsters, Würtele, "Audience Injection Attacks: A New Class of Attacks on Web-Based Authorization and Authentication Standards", IEEE S&P 2026. [ePrint 2025/629](https://eprint.iacr.org/2025/629) (abstract only; PDF not read) | Formal analysis (model not confirmed) | Signature-based client authentication (`private_key_jwt`) at several endpoints/ASes; led to rfc7523bis and BCP updates | **Closest prior work for R6 and R8**; related to R9 |
+| Hosseyni, Küsters, Würtele, "Audience Injection Attacks: A New Class of Attacks on Web-Based Authorization and Authentication Standards", IEEE S&P 2026. [ePrint 2025/629](https://eprint.iacr.org/2025/629) (PDF read 14 Nov 2026) | Attack paper: manual analysis and coordinated disclosure; **no formal proof of the fix** | An attacker AS lists an honest AS's endpoint in its configuration document; a client that uses one key at both ASes signs an assertion the honest AS accepts. Fix (§5): issuer identifier as the assertion `aud`; it "cannot be mitigated solely by the AS". Assumes the client validates the configuration document's issuer (§2.1). Mix-up is left to RFC 9207 (§2.3). §7: "a rigorous formal security analysis of these methods [is] a promising avenue for future research." | **Closest prior work for R6 and R8**; related to R9 |
 | draft-ietf-oauth-security-topics-update-01, §2.1 "Audience Injection Attacks", §2.2.2. [datatracker](https://datatracker.ietf.org/doc/draft-ietf-oauth-security-topics-update/01/) | IETF draft (informal) | Attacker AS publishes an honest AS's endpoint in its metadata; fix: issuer as sole `aud`, validated per RFC 8414 §3.3; mix-up defences need a validated issuer | Informally overlaps R6, R8 |
 | draft-ietf-oauth-rfc7523bis-10. [datatracker](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc7523bis/10/) | IETF draft | Client-assertion `aud` MUST be the AS issuer as sole value | Spec source for the fix in R6/R8 |
 | draft-ietf-oauth-identity-assertion-authz-grant-06 (ID-JAG), 31 Oct 2026. [datatracker](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-identity-assertion-authz-grant) | IETF draft (informal) | §4.4.1 requires both the `aud` and the `client_id` binding checks; §9 informal relay/replay reasoning; `resource` OPTIONAL | Informally overlaps R9, R10 |
@@ -40,12 +40,13 @@
 **R6: with `private_key_jwt`, the client-assertion `aud` check alone stops AS mix-up even without `iss`.**
 - **Partly covered** by the audience-injection work and rfc7523bis. They establish that the assertion `aud` must be the validated issuer, and that fix is the check R6 relies on.
 - We couldn't find prior work that states or machine-checks R6 itself: that the `aud` check can replace `iss` against mix-up, for a CIMD client using one key at many ASes.
-- The S&P 2026 PDF was not read and may discuss this.
+- The S&P 2026 paper (read 14 Nov 2026) does not discuss it: it treats mix-up as solved by RFC 9207 and client authentication as a separate goal.
 - The BCP update (§2.1, §2.2.2) treats audience injection and mix-up as separate problems. It still lists RFC 9207 `iss` (or an issuer in the redirect URI) as a condition for mix-up protection and does not offer the assertion `aud` as a substitute. R6 should therefore be read as "in this model, for confidential clients, the two defences overlap", not as advice to skip `iss`.
 
 **R8: an unvalidated metadata `issuer` defeats both `iss` and the assertion `aud` at once.**
 - **Partly covered** by the audience-injection work and the BCP update. They identify the root cause (trusting unvalidated metadata) and the fix (validate the issuer per RFC 8414 §3.3).
 - We couldn't find prior work showing that one unvalidated value neutralises both defences together, or any analysis in the CIMD/MCP setting.
+- The audience-injection paper *assumes* the client validates the configuration document's issuer (§2.1); its attacker keeps its own issuer and only lies about endpoints. R8 is the case that assumption excludes: the attacker claims the honest issuer, and the issuer-as-`aud` fix then fails along with `iss`. That dependency is implicit in the paper and explicit (machine-checked) in model 03.
 
 **R9: in ID-JAG, either the RAS `aud` check or its client binding check alone stops cross-RAS replay.**
 - **Partly covered** by the ID-JAG draft's own informal reasoning: it requires both checks and gives the audience-injection rationale.
@@ -61,7 +62,7 @@
 ## Not found / could not verify
 
 - **MCPSec (ProVerif):** only a project page; no paper, venue or code link found. Its OAuth coverage is unknown. **This is the main open risk for the "couldn't find prior work" claims about MCP authorization.**
-- **Primary PDFs not read (403):** the audience-injection paper (ePrint 2025/629) and FAPI 2.0 (ePrint 2024/078).
+- **Primary PDF not read:** FAPI 2.0 (ePrint 2024/078). The audience-injection paper was read on 14 Nov 2026.
 - **Not found:** any formal analysis of CIMD, ID-JAG, RFC 8693 token exchange, or refresh-token-to-issuer binding. This is absence of search hits, not proof of absence.
 - **Snippet only (not opened):** the OIDF `private_key_jwt` disclosure notice, the ETH Tamarin OIDC thesis (Hofmeier 2019), a 2026 Tamarin analysis of OIDC CSRF (TechScience CMC), and CVE-2026-26390.
 
@@ -76,4 +77,4 @@ Web searches run on 14 Nov 2026 (14 queries), among them:
 - `Tamarin ProVerif formal model OAuth mix-up attack RFC 9207 issuer identification verified`
 - `formal analysis OAuth 2.0 Token Exchange RFC 8693 OR "identity chaining" OR "refresh token" binding verification symbolic`
 
-Before submission: repeat the search; read the S&P 2026 and FAPI 2.0 PDFs; contact the MCPSec author for the paper.
+Before submission: repeat the search; read the FAPI 2.0 PDF; contact the MCPSec author for the paper.
