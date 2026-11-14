@@ -68,7 +68,11 @@
   - arXiv 2608.23858 ("Beyond the Mandate") analyses AP2 informally.
   - draft-mishra-oauth-agent-grants-02 has no mandate object.
   - We couldn't find formal work on UPI-style delegated or agent payments. The NPCI rules are known to us only from a secondary summary.
-  - Not yet checked: Visa Intelligent Commerce and Mastercard Agent Pay specifications.
+  - Visa Intelligent Commerce / Trusted Agent Protocol and Mastercard Verifiable Intent (draft v0.1) were checked on 15 Nov 2026; the comparison is in `case-study-upi.md`. We couldn't find a formal analysis of either.
+  - Adjacent, not formal protocol proofs of these schemes:
+    - arXiv 2602.06345 (runtime verification of AP2 mandates);
+    - eprint 2026/2060 (Tamarin, EIP-7702 delegation on Ethereum);
+    - Malladi 2021 (formal modelling of UPI, no delegation).
 
 ## Corrections this review triggered
 

@@ -57,7 +57,29 @@ None of these attacks is new. Each follows from dropping that check. What the mo
 - Device-ID binding as a separate factor.
 - The real NPCI message formats.
 
-The NPCI UPI Circle rules (delegation, caps, per-payment validation, delinking) are known to us **only from a secondary summary**, not from NPCI's circulars. They motivate the checks; the model does not claim to be UPI.
+The NPCI UPI Circle rules (delegation, caps, per-payment validation, delinking) are known to us **only from a secondary summary**, not from NPCI's circulars (OC 201, 13 Aug 2024; OC 201-B, 8 Oct 2025): the PDFs could not be retrieved on 15 Nov 2026. We found no NPCI circular on AI-agent payments, only press reports. They motivate the checks; the model does not claim to be UPI.
+
+**How industry agent-payment schemes compare** (published specs and docs, read 15 Nov 2026; not exhaustive):
+
+| Check in the model | Visa Intelligent Commerce / Trusted Agent Protocol | Mastercard Agent Pay / Verifiable Intent (draft v0.1) | NPCI UPI Circle, delegated payments (secondary source) |
+|---|---|---|---|
+| Principal's approval | Passkey-authenticated instruction | Cardholder mandate (L2) signed by the user's device key | 2FA consent at linking |
+| Payee | Merchant name checked against the mandate | `allowed_payees` / `allowed_merchants`, exact match MUST | Person-to-merchant only; no payee binding found |
+| Amount cap | `declineThreshold`, aggregated per instruction | `amount_range` and cumulative `budget` | Per-transaction and monthly caps |
+| Payment-server audience | Not as an audience claim (TAP signs `@authority`) | Not found in the parts read | Not found |
+| Proof of possession | Fresh `agentSignature` per call; TAP: RFC 9421 HTTP signatures with nonce and expiry checks | Agent key bound with `cnf` (RFC 7800); the agent signs the final order | Device ID and user ID validated on each payment |
+| Online revocation check | Token can be revoked by the issuer, "no callback or notification"; no per-payment check stated | Not defined; short expiry instead | Delinking in the app; no per-payment check stated |
+
+What the comparison shows:
+- None of the three defines a per-payment revocation check. They rely on expiry, token revocation or delinking instead. In the model, the online status check is the only thing that protects P11.
+- None binds the mandate to one payment server, in the way an OAuth `aud` would. In the model, dropping that check lets a mandate for one payment server be used at another, which falsifies P10.
+- Whether their other checks (merchant routing, issuer or network controls) close those gaps in practice is outside the model.
+
+Sources:
+- [Visa Intelligent Commerce concepts](https://developer.visa.com/docs/visa-intelligent-commerce/concepts)
+- [Trusted Agent Protocol specification](https://developer.visa.com/docs/trusted-agent-protocol/trusted-agent-protocol-specifications)
+- [Mastercard Verifiable Intent, draft v0.1](https://github.com/agent-intent/verifiable-intent): README and `spec/constraints.md` only
+- NPCI OC 201 (13 Aug 2024) and OC 201-B (8 Oct 2025): their PDFs could not be retrieved, so the NPCI column still rests on a law-firm summary.
 
 **Prior work.** arXiv 2609.00060 has Tamarin models of x402, MPP, ACP and AP2. It covers neither UPI nor MCP authorization. arXiv 2608.23858 analyses AP2 informally. We couldn't find prior formal work on UPI-style agent mandates. Details are in [related-work.md](related-work.md).
 
