@@ -79,6 +79,16 @@ def load_prove_rows():
 def main():
     with open(JSON, encoding="utf-8") as fh:
         cells = json.load(fh)
+    # A run that states some property as an exists-trace attack lemma uses a
+    # REDUCED model (attacker rules left out; see models/03 ATTACK_LEMMAS).
+    # Its all-traces proofs hold only for that reduced model, so they are
+    # marked R: not a proof for the full model, counted as undecided.
+    for c in cells:
+        st = c["status"]
+        if any(v in ("A", "N") for v in st.values()):
+            for k, v in list(st.items()):
+                if v == "V" and k != "executable":
+                    st[k] = "R"
     idx = {(c["model"], tuple(c["context"]), frozenset(c["removed"])): c for c in cells}
     problems = []
 
@@ -101,6 +111,8 @@ def main():
         if base not in cell["status"] and lemma != "executable":
             continue
         got = cell["status"].get("executable" if lemma == "executable" else base)
+        if got == "R":
+            got = "V"  # same run as prove.sh (reduced model there too)
         if lemma.endswith("_attack"):
             want = "A" if expected == "verified" else "N"
         elif lemma == "executable":
@@ -143,7 +155,7 @@ def main():
            "Each model is run once for **every subset of its removable checks** (one flag = one check). "
            "A cell is the result of a property with that subset removed: ✅ proved, ❌ attack found, "
            "❌ᵃ attack found with an exists-trace attack lemma (reduced model, see results.md R8), "
-           "∅ no attack in the reduced model (not a proof), ⏱ timeout (no result; the cap is stated), ? missing. "
+           "∅ no attack in the reduced model (not a proof), ✅ʳ proved only in the reduced model (attacker clients left out; not a proof for the full model, counted as undecided), ⏱ timeout (no result; the cap is stated), ? missing. "
            "A row marked **vacuous** is one where the honest protocol cannot run (`executable` fails), so a ✅ there means nothing.",
            "",
            f"**Tests:** {agree} cells agree with `scripts/prove.sh`; {mono_checked} subset pairs checked for monotonicity; "
@@ -152,7 +164,7 @@ def main():
            "",
            "COVERAGE_PLACEHOLDER",
            ""]
-    sym = {"V": "✅", "F": "❌", "A": "❌ᵃ", "N": "∅", "T": "⏱", "?": "?"}
+    sym = {"V": "✅", "F": "❌", "A": "❌ᵃ", "N": "∅", "R": "✅ʳ", "T": "⏱", "?": "?"}
     decided = total = 0
     for key, m in MODELS.items():
         for ctx in m["contexts"]:
@@ -180,7 +192,7 @@ def main():
                 undecided = 0
                 for c in mc:
                     st = c["status"].get(p)
-                    if st in ("T", "?", "N"):
+                    if st in ("T", "?", "N", "R"):
                         undecided += 1
                     if st == "V" and c["status"].get("executable") != "F":
                         suff.append(frozenset(f for f in flags if f not in c["removed"]))
