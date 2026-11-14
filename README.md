@@ -24,6 +24,9 @@ Classic formal analyses of OAuth do not cover this exact setup. Real bugs show i
 | 02 | [`02_code_and_audience.spthy`](models/02_code_and_audience.spthy) | Does a code / token reach only the intended AS and MCP server, and does an honest user's session end with that user's token? (PKCE + `state` + RFC 8707 audience + RFC 9207 `iss`; attacker accounts and clients) | `NO_AUD` / `NO_ISS` / `ISS_OPTIONAL` / `NO_RESOURCE` / `NO_STATE` / `NO_PKCE` / both / `NO_REDIRECT_CHECK` / fixed | ✅ attacks found in weakened variants; fixed verified; session integrity needs `state` **or** PKCE (CI) |
 | 03 | [`03_cimd_client_binding.spthy`](models/03_cimd_client_binding.spthy) | One CIMD client identity at many ASes: which checks (metadata `issuer`, `iss`, refresh-token binding, assertion `aud`) keep codes, tokens and refresh tokens bound to their AS? | confidential / `PUBLIC` × `NO_META_CHECK` / `NO_ISS` / `RT_UNBOUND` / `AS_NO_ASSERTION_AUD` | ✅ fixed verified for both client types; attacks in weakened variants (CI) |
 | 04 | [`04_id_jag.spthy`](models/04_id_jag.spthy) | Enterprise-Managed Authorization (ID-JAG): RFC 8693 at the IdP + RFC 7523 at the MCP AS | `NO_IDJAG_AUD` / `NO_CLIENT_BINDING` / both / `NO_RESOURCE_CLAIM` / fixed | ✅ fixed verified; replay needs both RAS checks off (CI) |
+| 06 | [`06_audience_injection.spthy`](models/06_audience_injection.spthy) | Audience injection against a CIMD client (one key at every AS): does an assertion sent to one AS stay useless at another? | `AUD_TOKEN_ENDPOINT` / `AS_LENIENT` / `NO_META_CHECK` / fixed | ✅ attack with token-endpoint `aud`; fixed by `aud` = validated issuer, even if the AS stays lenient (CI) |
+
+Model 05 is reserved for a planned payment-mandate case study.
 
 Results are tracked in [docs/results.md](docs/results.md). Each modelling choice is listed in [docs/threat-model.md](docs/threat-model.md).
 

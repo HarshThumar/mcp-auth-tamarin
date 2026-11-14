@@ -1,0 +1,272 @@
+theory MCP_Audience_Injection
+begin
+
+builtins: signing
+
+// tep(A): the URL of AS A's token endpoint. A public constructor: endpoint
+// URLs are public, and the attacker can name any of them in its metadata.
+// at(.) tags access tokens (public destructor, as in models 02-04).
+functions: tep/1, at/1, unat/1
+equations: unat(at(x)) = x
+
+/*
+ * Model 06: audience injection against a CIMD client.
+ * Does a client assertion (private_key_jwt) that the client sends to one
+ * authorization server's endpoint stay useless at every other AS?
+ *
+ * Spec pinned: MCP authorization draft as of 13 Nov 2026,
+ *   draft-ietf-oauth-client-id-metadata-document-03 (CIMD),
+ *   RFC 7523 §3 (aud "MAY" be the token endpoint URL),
+ *   draft-ietf-oauth-rfc7523bis-10 (aud MUST be the AS issuer, sole value),
+ *   RFC 8414 §3.3 (metadata `issuer` must equal the discovered issuer),
+ *   RFC 7009 (token revocation: an endpoint where the client authenticates).
+ *
+ * Context
+ *   Hosseyni, Kuesters, Wuertele, "Audience Injection Attacks", IEEE S&P 2026
+ *   (ePrint 2025/629). An attacker-run AS lists an HONEST AS's token
+ *   endpoint in its own metadata. A client that uses one key at both ASes and
+ *   sets the assertion `aud` to "the token endpoint URL from the metadata"
+ *   then signs, for one of the attacker's own endpoints, an assertion that
+ *   the honest AS accepts. With CIMD this precondition holds by design: the
+ *   same client_id and key are used at every AS, including one an untrusted
+ *   MCP server names. The paper gives no formal proof; this model checks the
+ *   attack and the fix symbolically in that setting.
+ *
+ * Phases (as in the paper)
+ *   1. The client sends a client-authenticated request (here: RFC 7009
+ *      revocation) to the attacker AS's revocation endpoint. The assertion
+ *      leaks.
+ *   2. The attacker uses it at the honest AS's token endpoint in a
+ *      client_credentials grant and gets a token for the client's own
+ *      resources (client impersonation).
+ *
+ * Properties
+ *   P7 client_authentication  an honest AS accepts an assertion of an honest
+ *                             client only if the client sent that assertion
+ *                             to an endpoint of that same AS
+ *   P3 token_secrecy          a client_credentials token an honest AS issues
+ *                             for an honest client never reaches the attacker
+ *
+ * Variants (flags)
+ *   (default)           client: aud = validated issuer (rfc7523bis);
+ *                       AS: accepts only its issuer as aud
+ *   AUD_TOKEN_ENDPOINT  pre-fix world: client sets aud = the token endpoint
+ *                       URL from the metadata; AS accepts its token endpoint
+ *                       URL (or its issuer) as aud (RFC 7523 §3, OIDC)
+ *   AS_LENIENT          fixed client; AS still accepts issuer OR token
+ *                       endpoint URL. Expected: secure (client fix suffices)
+ *   NO_META_CHECK       fixed aud rule, but the client records whatever
+ *                       `issuer` the metadata claims (no RFC 8414 §3.3)
+ *   Expected results: scripts/prove.sh; write-up: docs/results.md R12.
+ *
+ * Abstraction (see docs/threat-model.md)
+ *   - Dolev-Yao network. TLS to an endpoint = private fact ToEP(owner, m);
+ *     endpoints owned by an attacker-run AS leak what they receive.
+ *   - AS metadata = (issuer, token endpoint owner, revocation endpoint owner);
+ *     an attacker AS may fill every field with anything, including an honest
+ *     AS's issuer or endpoints.
+ *   - Which AS the client talks to is chosen freely (a malicious MCP server
+ *     can name any AS); PRM is not modelled separately (see models 01-03).
+ *   - Assertions are checked with verify(); jti replay is not modelled (a
+ *     leaked assertion has never been sent to the honest AS).
+ *   - Left out: authorization code flow (models 02-03), refresh, scopes.
+ */
+
+/* ------------------------------------------------------------------ */
+/* Setup                                                              */
+/* ------------------------------------------------------------------ */
+
+// Honest AS: issuer = itself, its own token and revocation endpoints.
+rule Setup_Honest_AS:
+    [ ]
+  --[ ASSetup($A), AS_Honest($A) ]->
+    [ !HonestAS($A), !ASMeta($A, $A, $A, $A) ]
+
+// Attacker-run AS: metadata may claim any issuer $I, and list any AS's token
+// endpoint ($T) and revocation endpoint ($O).
+rule Setup_Dishonest_AS:
+    [ ]
+  --[ ASSetup($X), AS_Dishonest($X) ]->
+    [ !DishonestAS($X), !ASMeta($X, $I, $T, $O) ]
+
+// Confidential CIMD client: one key, published in its metadata document.
+rule Setup_Client:
+    [ Fr(~sk) ]
+  --[ ClientSetup($C), ClientKeyCreated($C, ~sk) ]->
+    [ !Client($C), !ClientKey($C, ~sk), !CIMD($C, pk(~sk)), Out(pk(~sk)) ]
+
+// Attacker-run CIMD client (its key is the attacker's).
+rule Setup_Dishonest_Client:
+    [ Fr(~sk) ]
+  --[ ClientSetup($E), Client_Dishonest($E) ]->
+    [ !CIMD($E, pk(~sk)), Out(~sk) ]
+
+restriction as_set_up_once:
+  "All x #i #j. ASSetup(x) @ #i & ASSetup(x) @ #j ==> #i = #j"
+
+restriction client_set_up_once:
+  "All x #i #j. ClientSetup(x) @ #i & ClientSetup(x) @ #j ==> #i = #j"
+
+restriction equality:
+  "All x y #t. Eq(x, y) @ #t ==> x = y"
+
+/* ------------------------------------------------------------------ */
+/* The checks                                                         */
+/* ------------------------------------------------------------------ */
+
+#ifdef NO_META_CHECK
+#else
+// RFC 8414 §3.3: the metadata `issuer` must be the AS the client discovered.
+restriction metadata_issuer_validated:
+  "All a i #t. MetaIssuer(a, i) @ #t ==> a = i"
+#endif
+
+#ifdef AUD_TOKEN_ENDPOINT | AS_LENIENT
+// Pre-fix AS policy (RFC 7523 §3, OIDC Core §9): the issuer or the token
+// endpoint URL is an acceptable assertion audience.
+restriction assertion_audience_checked:
+  "All a aud #t. AssertionAud(a, aud) @ #t ==> (aud = a | aud = tep(a))"
+#else
+// rfc7523bis: the AS issuer is the only acceptable assertion audience.
+restriction assertion_audience_checked:
+  "All a aud #t. AssertionAud(a, aud) @ #t ==> aud = a"
+#endif
+
+/* ------------------------------------------------------------------ */
+/* Client                                                             */
+/* ------------------------------------------------------------------ */
+
+// The client discovers AS $X (named by some MCP server) and records the
+// metadata: issuer $I, token endpoint owner $T, revocation endpoint owner $O.
+rule Client_Discover:
+    [ !Client($C), !ASMeta($X, $I, $T, $O), Fr(~sid) ]
+  --[ ClientDiscovers(~sid, $C, $X), MetaIssuer($X, $I) ]->
+    [ !St_Client(~sid, $C, $X, $I, $T, $O) ]
+
+// Audience the client puts in its assertions for this AS.
+#ifdef AUD_TOKEN_ENDPOINT
+
+// Pre-fix: the token endpoint URL taken from the metadata.
+rule Client_Revoke:
+    [ !St_Client(~sid, $C, $X, $I, $T, $O), !ClientKey($C, ~sk), Fr(~jti) ]
+  --[ ClientAssertion($C, ~jti, $O), ClientRevokes($C, ~jti, $O) ]->
+    [ ToEP($O, <'revoke', $C, <<'cassert', $C, tep($T), ~jti>,
+                               sign(<'cassert', $C, tep($T), ~jti>, ~sk)>>) ]
+
+rule Client_CC_Token:
+    [ !St_Client(~sid, $C, $X, $I, $T, $O), !ClientKey($C, ~sk), Fr(~jti), Fr(~rid) ]
+  --[ ClientAssertion($C, ~jti, $T) ]->
+    [ ToEP($T, <'cc_token', ~rid, $C, <<'cassert', $C, tep($T), ~jti>,
+                                     sign(<'cassert', $C, tep($T), ~jti>, ~sk)>>) ]
+
+#else
+
+// Fixed: the recorded (validated) issuer.
+rule Client_Revoke:
+    [ !St_Client(~sid, $C, $X, $I, $T, $O), !ClientKey($C, ~sk), Fr(~jti) ]
+  --[ ClientAssertion($C, ~jti, $O), ClientRevokes($C, ~jti, $O) ]->
+    [ ToEP($O, <'revoke', $C, <<'cassert', $C, $I, ~jti>,
+                               sign(<'cassert', $C, $I, ~jti>, ~sk)>>) ]
+
+rule Client_CC_Token:
+    [ !St_Client(~sid, $C, $X, $I, $T, $O), !ClientKey($C, ~sk), Fr(~jti), Fr(~rid) ]
+  --[ ClientAssertion($C, ~jti, $T) ]->
+    [ ToEP($T, <'cc_token', ~rid, $C, <<'cassert', $C, $I, ~jti>,
+                                     sign(<'cassert', $C, $I, ~jti>, ~sk)>>) ]
+
+#endif
+
+/* ------------------------------------------------------------------ */
+/* Honest AS endpoints                                                */
+/* ------------------------------------------------------------------ */
+
+// Token endpoint, client_credentials grant, over the client's TLS connection.
+rule AS_CC_Token:
+    [ ToEP($A, <'cc_token', ~rid, c, <<'cassert', c, aud, jti>, sigC>>)
+    , !HonestAS($A), !CIMD(c, pkC), Fr(~tok) ]
+  --[ Eq(verify(sigC, <'cassert', c, aud, jti>, pkC), true)
+    , AssertionAud($A, aud)
+    , ASAcceptsClient($A, c, jti)
+    , CCTokenIssued(at(~tok), $A, c) ]->
+    [ FromEP(~rid, at(~tok)) ]
+
+// The same endpoint called from the network (e.g. by the attacker).
+rule AS_CC_Token_From_Network:
+    [ In(<'cc_token', c, <<'cassert', c, aud, jti>, sigC>>)
+    , !HonestAS($A), !CIMD(c, pkC), Fr(~tok) ]
+  --[ Eq(verify(sigC, <'cassert', c, aud, jti>, pkC), true)
+    , AssertionAud($A, aud)
+    , ASAcceptsClient($A, c, jti)
+    , CCTokenIssued(at(~tok), $A, c) ]->
+    [ Out(at(~tok)) ]
+
+// Revocation endpoint (RFC 7009 §2.1: the client authenticates). The token
+// to revoke is irrelevant here; the endpoint only consumes the request.
+rule AS_Revoke:
+    [ ToEP($A, <'revoke', c, <<'cassert', c, aud, jti>, sigC>>)
+    , !HonestAS($A), !CIMD(c, pkC) ]
+  --[ Eq(verify(sigC, <'cassert', c, aud, jti>, pkC), true)
+    , AssertionAud($A, aud)
+    , ASAcceptsClient($A, c, jti) ]->
+    [ ]
+
+// The client receives its token.
+rule Client_Receives_Token:
+    [ FromEP(~rid, at(tok)) ]
+  --[ ClientGotToken(~rid, at(tok)) ]->
+    [ ]
+
+/* ------------------------------------------------------------------ */
+/* Attacker-run AS endpoints                                          */
+/* ------------------------------------------------------------------ */
+
+rule Dishonest_EP_Leaks:
+    [ ToEP($X, m), !DishonestAS($X) ]
+  --[ LeakedToEP($X) ]->
+    [ Out(m) ]
+
+/* ------------------------------------------------------------------ */
+/* Lemmas                                                             */
+/* ------------------------------------------------------------------ */
+
+// Helper: an honest client's signing key never leaks, so the attacker can
+// only replay the client's assertions, never forge new ones.
+lemma client_key_secret [reuse]:
+  "All c sk #i. ClientKeyCreated(c, sk) @ #i ==> not (Ex #j. K(sk) @ #j)"
+
+// Sanity: an honest client gets a client_credentials token from an honest AS
+// with no attacker-run AS involved.
+lemma executable:
+  exists-trace
+  "Ex rid t a c #i #j.
+     CCTokenIssued(t, a, c) @ #i & ClientGotToken(rid, t) @ #j
+     & not (Ex x #k. AS_Dishonest(x) @ #k)
+     & not (Ex x #k. Client_Dishonest(x) @ #k)"
+
+// P7: an honest AS accepts an honest client's assertion only if the client
+// sent that assertion to an endpoint of that AS.
+lemma client_authentication:
+  "All a c jti #i.
+     ASAcceptsClient(a, c, jti) @ #i
+     & not (Ex #k. Client_Dishonest(c) @ #k)
+     ==> Ex #j. ClientAssertion(c, jti, a) @ #j"
+
+// Shape of the attack (test that the trace is the paper's, not an artefact):
+// an assertion the honest client sent to an attacker AS's REVOCATION
+// endpoint is accepted at an honest AS's token endpoint (client_credentials).
+// Expected: verified (a trace exists) in attack variants, falsified when fixed.
+lemma injection_via_revocation:
+  exists-trace
+  "Ex c x a jti t #r #k #i.
+     ClientRevokes(c, jti, x) @ #r & AS_Dishonest(x) @ #k
+     & ASAcceptsClient(a, c, jti) @ #i & CCTokenIssued(t, a, c) @ #i
+     & not (Ex #d. Client_Dishonest(c) @ #d)"
+
+// P3: a client_credentials token for an honest client never leaks.
+lemma token_secrecy:
+  "All t a c #i.
+     CCTokenIssued(t, a, c) @ #i
+     & not (Ex #k. Client_Dishonest(c) @ #k)
+     ==> not (Ex #j. K(t) @ #j)"
+
+end

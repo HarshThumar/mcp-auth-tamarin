@@ -43,5 +43,6 @@ Modelled in model 04 (see [threat-model.md](threat-model.md) for the parameters 
 | P4 | **Refresh-token secrecy (CIMD):** one client identity across ASes does not leak a refresh token issued by AS₁ to AS₂. | 03 `refresh_token_secrecy` (`refresh_token_secrecy_attack` in two variants) |
 | P5 | **Enterprise grant agreement:** an honest RAS issues a token for U to client C only on an ID-JAG issued for U, that RAS and C (no cross-RAS replay). | 04 `ras_grant_agreement` |
 | P6 | **Session integrity:** if an honest user's client session with an honest AS ends with a token, that AS issued it for that user and client (no code injection / login CSRF). | 02 `session_integrity` |
+| P7 | **Client authentication (no audience injection):** an honest AS accepts an honest client's assertion only if the client sent that assertion to an endpoint of that same AS. | 06 `client_authentication` |
 
 Helper and sanity lemmas (`*_sources`, `executable*`, `client_key_secret`, `code_single_use`) are not properties; `scripts/prove.sh` counts them separately.

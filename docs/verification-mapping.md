@@ -19,6 +19,11 @@ This document provides the Domain-Driven Design (DDD) traceability matrix betwee
 | **Resource Indicator** | RFC 8707 | `$RS` parameter in auth & token req | Scope/audience target URI |
 | **Issuer Parameter** | RFC 9207 §2 | `$AS` in redirect response | AS identity parameter preventing mix-up |
 | **Access Token** | OAuth 2.1 §1.4 / RFC 8707 §2 | `at(~tok)` | Bearer token tagged constructor `at/1` |
+| **Refresh Token** | RFC 6749 §1.5 | `rt(~r)` | Tagged constructor `rt/1` (model 03) |
+| **Client Assertion** | RFC 7523 §2.2, rfc7523bis | `<<'cassert', C, aud, jti>, sign(...)>` | `private_key_jwt`; checked with `verify(...)`; `aud` must be the AS issuer (rfc7523bis) |
+| **Token Endpoint URL** | RFC 8414 §2 | `tep($A)` | Public constructor (model 06); an RFC 7523-era acceptable assertion `aud` |
+| **Authenticated Endpoint** | RFC 7009, RFC 9126 | `ToEP(owner, m)` | Any endpoint where the client authenticates (model 06: revocation); its owner may be an attacker AS |
+| **ID-JAG** | ID-JAG draft-06 | `<'idjag', I, U, A, C, res, jti>` signed by the IdP | Identity Assertion JWT Authorization Grant (model 04) |
 
 ---
 
@@ -90,6 +95,21 @@ This document provides the Domain-Driven Design (DDD) traceability matrix betwee
 | S4.6 | RAS validates and issues token | ID-JAG draft-06 §4.4.1 | `RAS_Token`, `RAS_Token_From_Network`, `RAS_Token_NoRes`, `RAS_Token_NoRes_From_Network` | Verifies both signatures; `CheckAud(aud, $A)` (removed by `NO_IDJAG_AUD`) and `CheckClient(cid, c)` (removed by `NO_CLIENT_BINDING`); token audience = `resource`, or a broad audience `$AnyRS` when `resource` is absent. |
 | S4.7 | Attacker-run RAS | Threat model | `Dishonest_RAS_Leaks`, `Dishonest_RAS_Answers` | Leaks the ID-JAG and assertion; answers as it likes. |
 | S4.8 | Client uses token; MCP server | RFC 8707, Dolev-Yao | `Client_Use_Token`, `RS_Accepts`, `Attacker_To_RS`, `Dishonest_RS_Leaks` | Audience checked at the honest RS; malicious servers leak. |
+
+### Model 06 (`models/06_audience_injection.spthy`)
+*Focus: audience injection (Hosseyni, Küsters, Würtele, S&P 2026) against a CIMD client that uses one key at every AS (R12).*
+
+| Step # | Protocol Action | RFC / Spec | Exact Tamarin Rule | State Preconditions & Effects |
+|---|---|---|---|---|
+| S6.1 | AS setup and metadata with endpoints | RFC 8414 §2 | `Setup_Honest_AS`, `Setup_Dishonest_AS` | Metadata = (issuer, token endpoint owner, revocation endpoint owner). Attacker AS may list any issuer and any AS's endpoints. |
+| S6.2 | CIMD clients | CIMD draft-03, RFC 7523 | `Setup_Client`, `Setup_Dishonest_Client` | One signing key per client, public key in `!CIMD`; attacker clients' keys are public. |
+| S6.3 | Client discovers AS, records metadata | RFC 9728, RFC 8414 §3.3 | `Client_Discover` | `MetaIssuer($X, $I)` (restriction `metadata_issuer_validated`, removed by `NO_META_CHECK`). |
+| S6.4 | Client-authenticated revocation request | RFC 7009 §2.1, RFC 7523 §3 | `Client_Revoke` | Assertion sent to the metadata's revocation endpoint. `aud` = recorded issuer (fixed, rfc7523bis) or `tep(token endpoint)` (`AUD_TOKEN_ENDPOINT`). |
+| S6.5 | Client-credentials token request | RFC 6749 §4.4, RFC 7523 | `Client_CC_Token` | Same assertion rule, sent to the metadata's token endpoint. |
+| S6.6 | Honest AS token endpoint | RFC 6749 §4.4, rfc7523bis | `AS_CC_Token`, `AS_CC_Token_From_Network` | `verify(...)` and `AssertionAud($A, aud)`: `aud = $A` (fixed) or `aud ∈ {$A, tep($A)}` (`AUD_TOKEN_ENDPOINT`, `AS_LENIENT`). Issues a token for the client's own resources. |
+| S6.7 | Honest AS revocation endpoint | RFC 7009 | `AS_Revoke` | Same assertion checks; no output. |
+| S6.8 | Client receives token | RFC 6749 §5.1 | `Client_Receives_Token` | Over the client's TLS connection. |
+| S6.9 | Attacker-run endpoints | Threat model | `Dishonest_EP_Leaks` | Any request to an endpoint owned by an attacker AS leaks. |
 
 ---
 

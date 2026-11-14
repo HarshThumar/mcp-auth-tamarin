@@ -63,9 +63,18 @@ Models 03 and 04 are not tied to one advisory. They check spec-level combination
 - Codes are single-use (lemma `code_single_use`); tags have public destructors, as in model 02.
 - Left out: refresh-token rotation, DPoP, expiry, scopes, the browser, session integrity (see model 02).
 
+### Model 06 modelling choices (audience injection)
+
+- AS metadata has three fields: `issuer`, the token endpoint's owner and the revocation endpoint's owner. An attacker AS may fill each with anything, including an honest AS's issuer or endpoints. The token endpoint URL is the public term `tep(A)`, distinct from the issuer `A`, as in practice.
+- Which AS the client talks to is chosen freely: a malicious MCP server can name any AS, so PRM is not modelled separately.
+- The client-authenticated "other endpoint" is RFC 7009 revocation. PAR, introspection or CIBA would play the same role; one is enough to show the attack.
+- Second phase: client-credentials grant only (client impersonation). P7 is stated for honest clients; attacker-run CIMD clients exist.
+- AS audience policy is a restriction: issuer only (fixed), or issuer or token endpoint URL (`AUD_TOKEN_ENDPOINT`, `AS_LENIENT`).
+- Left out: `jti` replay caches (they would not stop a never-used leaked assertion), the authorization code flow (models 02–03), refresh, scopes.
+
 ### Model 04 modelling choices (ID-JAG)
 
-- One honest IdP whose signing key never leaks, trusted by every honest RAS. SSO (OIDC/SAML and the ID token) is abstracted into the private channel from the client to the IdP, so the IdP's client authentication and its "ID token audience = client" check are built in. Honest users only sign in to honest clients; attacker-controlled users (`User_Dishonest`) also sign in to attacker-run clients, which then hold genuine ID-JAGs. P2' and P4 are stated for honest users.
+- One honest IdP whose signing key never leaks, trusted by every honest RAS. SSO (OIDC/SAML and the ID token) is abstracted into the private channel from the client to the IdP, so the IdP's client authentication and its "ID token audience = client" check are built in. Honest users only sign in to honest clients; attacker-controlled users (`User_Dishonest`) also sign in to attacker-run clients, which then hold genuine ID-JAGs. P2' and P5 are stated for honest users.
 - Worst-case IdP policy: it issues an ID-JAG for any `audience` and `resource` the honest client asks for.
 - Clients are confidential (`private_key_jwt`); the RAS always checks the assertion signature and that its `aud` is the RAS. The attacker may register its own clients. The client sets `resource` to the MCP server it talks to.
 - `TokenIssued` records the token's **actual** audience (unlike model 02, where P3 is keyed on the requested one).
