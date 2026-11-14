@@ -61,6 +61,14 @@ equations: uncd(cd(x)) = x, unat(at(x)) = x
  *                    expected: all verified (state alone keeps P6)
  *   -D=NO_PKCE -D=NO_STATE
  *                    expected: P6 FALSIFIED (code injection / login CSRF)
+ *   -D=NO_REDIRECT_CHECK
+ *                    the AS does not match `redirect_uri` against the client's
+ *                    registered URIs (CIMD document): an attacker-built
+ *                    request with the attacker's redirect URI and its own
+ *                    PKCE challenge, approved by an honest user, sends the
+ *                    code to the attacker (RFC 9700 §4.1).
+ *                    expected: P3 FALSIFIED (PKCE does not help: the
+ *                    attacker chose the challenge)
  *   (no flag)        honest ASes always send `iss`, the client always checks
  *                    it, the MCP server checks the audience.
  *                    expected: P2 verified, P3 verified
@@ -254,6 +262,19 @@ rule AS_Authorize_NoIss_Net:
   --[ Consent($U, $C, $RS, $AS), CodeIssued(cd(~code)) ]->
     [ Code($AS, cd(~code), $U, $C, challenge, $RS)
     , ToClient($C, <'authz_response_noiss', cd(~code), state>) ]
+
+#ifdef NO_REDIRECT_CHECK
+// NO_REDIRECT_CHECK: the AS accepts any redirect_uri for an honest client.
+// The attacker sends an honest user a crafted authorization link with its
+// own redirect URI (and its own PKCE challenge); the user approves, and the
+// code goes to the attacker.
+rule AS_Authorize_Open_Redirect:
+    [ In(<'authz_request', $AS, $C, challenge, $RS, state, 'attacker_redirect_uri'>)
+    , !HonestAS($AS), !HonestClient($C), Fr(~code) ]
+  --[ Consent($U, $C, $RS, $AS), CodeIssued(cd(~code)) ]->
+    [ Code($AS, cd(~code), $U, $C, challenge, $RS)
+    , Out(<'authz_response', cd(~code), state, $AS>) ]
+#endif
 
 // An attacker-controlled user authorizes any client in the attacker's own
 // browser: the code lands in the attacker's hands.

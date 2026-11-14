@@ -1,6 +1,6 @@
 # Results
 
-*All models last checked 14 Nov 2026 with Tamarin 1.12.0 and Maude 3.5.1 (local WSL run; CI runs the same script).* `scripts/prove.sh` (and CI) checks every expectation automatically: **198/198 pass** (80 security-property results, 118 helper or sanity lemmas), with no well-formedness warnings, in about 40 minutes locally with `JOBS=4`. The full Tamarin output is saved in `results/` and uploaded as a CI artifact. Property numbers (P1–P6) are the same in every model; see [flow.md](flow.md) §3.
+*All models last checked 14 Nov 2026 with Tamarin 1.12.0 and Maude 3.5.1 (local WSL run; CI runs the same script).* `scripts/prove.sh` (and CI) checks every expectation automatically: **205/205 pass** (83 security-property results, 122 helper or sanity lemmas), with no well-formedness warnings, in about 40 minutes locally with `JOBS=4`. The full Tamarin output is saved in `results/` and uploaded as a CI artifact. Property numbers (P1–P6) are the same in every model; see [flow.md](flow.md) §3.
 
 ### Model 01: credential binding (revised 14 Nov 2026)
 
@@ -28,6 +28,7 @@ P2 = `rs_accepts_only_consented`, P3 = `token_secrecy`, P6 = `session_integrity`
 | `NO_STATE` | ✅ (84) | ✅ (35) | ✅ (61) | R5: PKCE alone keeps P6 |
 | `NO_PKCE` | ✅ (72) | ✅ (30) | ✅ (49) | R5: `state` alone keeps P6 |
 | `NO_PKCE` + `NO_STATE` | ✅ (84) | ✅ (36) | ❌ falsified (5) | R5: code injection |
+| `NO_REDIRECT_CHECK` | ✅ (84) | ❌ falsified (8) | ✅ (53) | R11: open redirect; PKCE does not help |
 
 ### Model 03: one CIMD client identity at many ASes (revised 14 Nov 2026)
 
@@ -144,6 +145,13 @@ The variant table shows which checks are needed for which client. For a **public
 - **What the model shows:** a client talking to a malicious MCP server omits `resource`. If the RAS then issues a broad token whose audience covers an honest MCP server (the same assumption as R4), the malicious server receives it and replays it there.
 - **Scope:** as in R4, this needs a RAS that issues broad audiences when `resource` is absent. P2 is falsified by definition here (it asks for an ID-JAG naming the server, which never exists), so P2' is the meaningful lemma.
 - **Is it new?** No; it is G4 again, in the enterprise profile. New spec question G9: should the MCP profile make `resource` REQUIRED?
+
+### R11 (14 Nov 2026): exact redirect URI matching is needed; PKCE does not replace it
+- **Model + lemma:** 02 `-D=NO_REDIRECT_CHECK`: P3 falsified (8 steps). P2 and P6 verified.
+- **What the spec says:** with Client ID Metadata Documents, the AS takes the client's redirect URIs from the client's metadata document, and redirect URIs are matched exactly (OAuth 2.1; RFC 9700 §4.1). The MCP security considerations discuss open redirection.
+- **What the model shows:** an AS that accepts any `redirect_uri` for an honest client lets the attacker send an honest user a crafted authorization link with the attacker's redirect URI and the attacker's own PKCE challenge. The user approves, the code goes to the attacker, and the attacker redeems it with its own verifier. PKCE does not help, because the attacker chose the challenge. PKCE only protects codes from flows the client started itself.
+- **Scope:** the user is assumed to approve the request (as in the mix-up setting, G8). Browser internals (cookies, origins, open redirectors on the client side) are not modelled.
+- **Is it new?** No. It is the redirect URI manipulation attack of RFC 9700 §4.1.
 
 ## Modelling notes
 
