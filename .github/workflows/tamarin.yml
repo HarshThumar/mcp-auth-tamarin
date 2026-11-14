@@ -4,11 +4,13 @@ on:
   push:
     paths-ignore:
       - 'docs/**'
+      - '!docs/verification-mapping.md'
       - '*.md'
       - '.gitignore'
   pull_request:
     paths-ignore:
       - 'docs/**'
+      - '!docs/verification-mapping.md'
       - '*.md'
       - '.gitignore'
   workflow_dispatch:
@@ -29,6 +31,9 @@ jobs:
 
       - name: Lint model headers
         run: bash scripts/check-model-header.sh
+
+      - name: Lint rule-to-spec mapping (every rule in docs/verification-mapping.md)
+        run: bash scripts/check-mapping.sh
 
       - name: Cache Maude and Tamarin binaries
         id: tool-cache

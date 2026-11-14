@@ -2,6 +2,9 @@
 # Run every model variant and check each lemma against its expected result.
 # Usage: scripts/prove.sh            (needs tamarin-prover and maude on PATH)
 #        JOBS=4 scripts/prove.sh     (run 4 variants in parallel)
+#        ONLY=03 scripts/prove.sh    (only rows matching this regex on "model|flags|lemma")
+#        TIMEOUT=2400                (hard cap per variant in seconds, killed with SIGKILL; default 2400)
+# Wall time per variant is written to results/timings.tsv.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -233,9 +236,24 @@ run_variant() {  # model flag: one Tamarin run per variant, full derivation chec
     for f in "${fl[@]}"; do args+=("-D=$f"); done
   fi
   echo "== tamarin-prover ${args[*]}"
-  tamarin-prover "${args[@]}" >"$out" 2>&1 || true
+  local start rc=0
+  start=$(date +%s)
+  timeout -s KILL "${TIMEOUT:-2400}" tamarin-prover "${args[@]}" >"$out" 2>&1 || rc=$?
+  if [[ $rc -eq 124 || $rc -eq 137 ]]; then echo "PROVE_SH_TIMEOUT after ${TIMEOUT:-2400}s" >>"$out"; fi
+  printf '%s\t%s\t%s\n' "$(basename "$out" .txt)" "$(( $(date +%s) - start ))" "$rc" >>results/timings.tsv
 }
 export -f run_variant outfile
+
+# 0. ONLY=<regex> keeps the matching rows (on "model|flags|lemma").
+if [[ -n "${ONLY:-}" ]]; then
+  kept=()
+  for row in "${expectations[@]}"; do
+    if [[ "${row%|*}" =~ ${ONLY} ]]; then kept+=("$row"); fi
+  done
+  if [[ ${#kept[@]} -eq 0 ]]; then echo "FAIL  ONLY=${ONLY} matches no expectation"; exit 1; fi
+  expectations=("${kept[@]}")
+fi
+printf 'variant\tseconds\texit\n' >results/timings.tsv
 
 # 1. Run every variant once. JOBS=n runs n variants in parallel (default 1).
 printf '%s\n' "${expectations[@]}" | cut -d'|' -f1,2 | awk '!seen[$0]++' | tr '|' ' ' \
@@ -248,6 +266,10 @@ for row in "${expectations[@]}"; do
   out="$(outfile "$model" "$flag")"
   if [[ -z "${checked[$out]:-}" ]]; then
     checked[$out]=1
+    if grep -q "^PROVE_SH_TIMEOUT" "$out"; then
+      echo "FAIL  $out: $(grep "^PROVE_SH_TIMEOUT" "$out")"
+      fail=1
+    fi
     if grep -qE "WARNING:.*wellformedness" "$out"; then
       echo "FAIL  $out: wellformedness warning"
       fail=1
@@ -274,4 +296,6 @@ done
 total=${#expectations[@]}
 helpers=$(printf '%s\n' "${expectations[@]}" | grep -cE '\|(code_sources|token_sources|rt_sources|executable|executable_refresh|client_key_secret|code_single_use)\|' || true)
 echo "Checked ${total} lemma results: $((total - helpers)) security-property results, ${helpers} helper/sanity lemmas."
+echo "Slowest variants (seconds):"
+tail -n +2 results/timings.tsv | sort -t$'\t' -k2,2nr | head -5 | sed 's/^/  /'
 exit "$fail"

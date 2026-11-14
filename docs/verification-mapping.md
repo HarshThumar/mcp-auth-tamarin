@@ -57,6 +57,42 @@ This document provides the Domain-Driven Design (DDD) traceability matrix betwee
 
 ---
 
+### Model 03 (`models/03_cimd_client_binding.spthy`)
+*Focus: one CIMD client identity and key at many authorization servers; which checks keep codes, access tokens and refresh tokens bound to their AS (R6–R8).*
+
+| Step # | Protocol Action | RFC / Spec | Exact Tamarin Rule | State Preconditions & Effects |
+|---|---|---|---|---|
+| S3.1 | AS setup and metadata | RFC 8414, RFC 9207 | `Setup_Honest_AS`, `Setup_Dishonest_AS_Iss`, `Setup_Dishonest_AS_NoIss` | Honest AS: metadata `issuer` = itself, always sends `iss`. Attacker AS: metadata claims any issuer `$I`, with or without `iss` support. |
+| S3.2 | MCP servers and PRM | RFC 9728 | `Setup_Honest_RS`, `Setup_Dishonest_RS` | Honest RS names an honest AS in `!PRM`; a malicious RS names any AS at run time. |
+| S3.3 | CIMD client and its document | CIMD draft-03, RFC 7523 | `Setup_Client`, `Setup_Dishonest_Client` | Confidential client: one signing key, public key in its metadata document (`!CIMD`), used at every AS. `PUBLIC`: no key. Attacker-run CIMD clients (key public). |
+| S3.4 | Client discovers AS, records issuer, sends authz request | RFC 9728, RFC 8414 §3.3, RFC 7636 | `Client_Start_Honest_RS`, `Client_Start_Dishonest_RS` | Emits `MetaIssuer($AS, $I)` (restriction `metadata_issuer_validated`, removed by `NO_META_CHECK`); PKCE challenge `h(~ver)`. |
+| S3.5 | AS issues code | OAuth 2.1 §4.1.2, RFC 9207 | `AS_Authorize`, `AS_Authorize_Dishonest_Client` | Linear `Code(...)` bound to client, challenge and `$RS`; response carries `iss`. Attacker clients' codes go to the network. |
+| S3.6 | Attacker injects a callback | Dolev-Yao | `Attacker_Callback_Iss`, `Attacker_Callback_NoIss` | Any code, with any or no `iss`, to the client's redirect URI. |
+| S3.7 | Client checks `iss` | RFC 9207 §2.4 | `Client_Callback_Iss`, `Client_Callback_NoIss` | `IssCheck(recorded, received)` (restriction `iss_checked`, removed by `NO_ISS`); absent `iss` accepted only if metadata does not advertise it. |
+| S3.8 | Token request with client assertion | RFC 7523, rfc7523bis | `Client_Token_Request` | Confidential: assertion `<'cassert', C, I, jti>` signed, `aud` = the **recorded** issuer. Public: no client authentication. |
+| S3.9 | AS token endpoint | RFC 7636, RFC 7523 §3 | `AS_Token`, `AS_Token_From_Network` | Consumes the code, checks PKCE and `verify(...)`; `AssertionAud($AS, aud)` (restriction `assertion_audience_checked`, removed by `AS_NO_ASSERTION_AUD`); issues `at(~tok)` and `rt(~r)`. |
+| S3.10 | Attacker-run AS | Threat model | `Dishonest_AS_Leaks`, `Dishonest_AS_Answers` | Leaks every request (code, verifier, assertion, refresh token) and answers on the connection. |
+| S3.11 | Client uses token, stores refresh token | MCP Token Handling | `Client_Use_Token` | Bearer token to the RS; refresh token stored with the recorded issuer. |
+| S3.12 | Client refreshes | RFC 6749 §6, MCP Authorization Server Binding | `Client_Refresh` | Sends the stored refresh token to the AS the current MCP server names; `RefreshAt(recorded, current)` (restriction `refresh_token_bound_to_issuer`, removed by `RT_UNBOUND`). |
+| S3.13 | AS refresh endpoint | RFC 6749 §6 | `AS_Refresh`, `AS_Refresh_From_Network` | Accepts a refresh token it issued (with a valid assertion for confidential clients) and issues a new access token. |
+| S3.14 | MCP server | RFC 8707, Dolev-Yao | `RS_Accepts`, `Attacker_To_RS`, `Dishonest_RS_Leaks` | Audience always checked here; malicious servers leak what they receive. |
+
+### Model 04 (`models/04_id_jag.spthy`)
+*Focus: Enterprise-Managed Authorization (ID-JAG): RFC 8693 token exchange at the IdP, then RFC 7523 JWT bearer grant at the MCP authorization server (RAS) (R9–R10).*
+
+| Step # | Protocol Action | RFC / Spec | Exact Tamarin Rule | State Preconditions & Effects |
+|---|---|---|---|---|
+| S4.1 | IdP, RAS and MCP servers | ID-JAG draft-06, RFC 9728 | `Setup_IdP`, `Setup_Honest_RAS`, `Setup_Dishonest_RAS`, `Setup_Honest_RS`, `Setup_Dishonest_RS` | One IdP with a signing key; honest and attacker-run RASes; honest RS names an honest RAS. |
+| S4.2 | Clients and users | Threat model | `Setup_Honest_Client`, `Setup_Dishonest_Client`, `Setup_Dishonest_User` | Honest clients with private keys; attacker clients (key public); attacker-controlled user accounts at the IdP. |
+| S4.3 | Client discovers RAS, requests token exchange | RFC 9728, RFC 8693 §2.1 | `Client_Start_Honest_RS`, `Client_Start_Dishonest_RS` | Requests an ID-JAG for audience `$A` and `resource` `$RS`; under `NO_RESOURCE_CLAIM` without `resource`. |
+| S4.4 | IdP issues ID-JAG | ID-JAG draft-06 §4.3 | `IdP_Issue_IDJAG`, `IdP_Issue_IDJAG_Dishonest_Client` | Signed `<'idjag', I, U, A, C, res, jti>`; worst-case policy grants any audience/resource. Attacker clients get genuine ID-JAGs only for attacker users. |
+| S4.5 | JWT bearer grant | RFC 7523 §2.1, ID-JAG §4.4 | `Client_JWT_Bearer` | Sends the ID-JAG plus a client assertion with `aud` = the RAS. |
+| S4.6 | RAS validates and issues token | ID-JAG draft-06 §4.4.1 | `RAS_Token`, `RAS_Token_From_Network`, `RAS_Token_NoRes`, `RAS_Token_NoRes_From_Network` | Verifies both signatures; `CheckAud(aud, $A)` (removed by `NO_IDJAG_AUD`) and `CheckClient(cid, c)` (removed by `NO_CLIENT_BINDING`); token audience = `resource`, or a broad audience `$AnyRS` when `resource` is absent. |
+| S4.7 | Attacker-run RAS | Threat model | `Dishonest_RAS_Leaks`, `Dishonest_RAS_Answers` | Leaks the ID-JAG and assertion; answers as it likes. |
+| S4.8 | Client uses token; MCP server | RFC 8707, Dolev-Yao | `Client_Use_Token`, `RS_Accepts`, `Attacker_To_RS`, `Dishonest_RS_Leaks` | Audience checked at the honest RS; malicious servers leak. |
+
+---
+
 ## 3. Formal Security Properties (Lemmas)
 
 ### Model 01 Lemmas
