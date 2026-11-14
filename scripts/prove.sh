@@ -218,6 +218,26 @@ expectations=(
   "models/04_id_jag.spthy|NO_RESOURCE_CLAIM|rs_accepts_only_requested|falsified"
   "models/04_id_jag.spthy|NO_RESOURCE_CLAIM|token_secrecy|falsified"
   "models/04_id_jag.spthy|NO_RESOURCE_CLAIM|ras_grant_agreement|verified"
+  "models/06_audience_injection.spthy|-|client_key_secret|verified"
+  "models/06_audience_injection.spthy|-|executable|verified"
+  "models/06_audience_injection.spthy|-|client_authentication|verified"
+  "models/06_audience_injection.spthy|-|token_secrecy|verified"
+  "models/06_audience_injection.spthy|-|injection_via_revocation|falsified"
+  "models/06_audience_injection.spthy|AUD_TOKEN_ENDPOINT|client_key_secret|verified"
+  "models/06_audience_injection.spthy|AUD_TOKEN_ENDPOINT|executable|verified"
+  "models/06_audience_injection.spthy|AUD_TOKEN_ENDPOINT|client_authentication|falsified"
+  "models/06_audience_injection.spthy|AUD_TOKEN_ENDPOINT|token_secrecy|falsified"
+  "models/06_audience_injection.spthy|AUD_TOKEN_ENDPOINT|injection_via_revocation|verified"
+  "models/06_audience_injection.spthy|AS_LENIENT|client_key_secret|verified"
+  "models/06_audience_injection.spthy|AS_LENIENT|executable|verified"
+  "models/06_audience_injection.spthy|AS_LENIENT|client_authentication|verified"
+  "models/06_audience_injection.spthy|AS_LENIENT|token_secrecy|verified"
+  "models/06_audience_injection.spthy|AS_LENIENT|injection_via_revocation|falsified"
+  "models/06_audience_injection.spthy|NO_META_CHECK|client_key_secret|verified"
+  "models/06_audience_injection.spthy|NO_META_CHECK|executable|verified"
+  "models/06_audience_injection.spthy|NO_META_CHECK|client_authentication|falsified"
+  "models/06_audience_injection.spthy|NO_META_CHECK|token_secrecy|falsified"
+  "models/06_audience_injection.spthy|NO_META_CHECK|injection_via_revocation|verified"
 )
 
 outfile() {  # model flag -> results file
@@ -294,7 +314,7 @@ for row in "${expectations[@]}"; do
 done
 
 total=${#expectations[@]}
-helpers=$(printf '%s\n' "${expectations[@]}" | grep -cE '\|(code_sources|token_sources|rt_sources|executable|executable_refresh|client_key_secret|code_single_use)\|' || true)
+helpers=$(printf '%s\n' "${expectations[@]}" | grep -cE '\|(code_sources|token_sources|rt_sources|executable|executable_refresh|client_key_secret|code_single_use|injection_via_revocation)\|' || true)
 echo "Checked ${total} lemma results: $((total - helpers)) security-property results, ${helpers} helper/sanity lemmas."
 echo "Slowest variants (seconds):"
 tail -n +2 results/timings.tsv | sort -t$'\t' -k2,2nr | head -5 | sed 's/^/  /'
