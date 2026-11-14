@@ -50,11 +50,15 @@ equations: unat(at(x)) = x
  * Variants (flags)
  *   (default)           client: aud = validated issuer (rfc7523bis);
  *                       AS: accepts only its issuer as aud
- *   AUD_TOKEN_ENDPOINT  pre-fix world: client sets aud = the token endpoint
- *                       URL from the metadata; AS accepts its token endpoint
- *                       URL (or its issuer) as aud (RFC 7523 §3, OIDC)
- *   AS_LENIENT          fixed client; AS still accepts issuer OR token
- *                       endpoint URL. Expected: secure (client fix suffices)
+ *   One flag = one check (for the ablation table, docs/ablation.md):
+ *   AUD_TOKEN_ENDPOINT  client side, pre-fix: aud = the token endpoint URL
+ *                       from the metadata (RFC 7523 §3, OIDC Core §9)
+ *   AS_LENIENT          AS side, pre-fix: the AS accepts its issuer OR its
+ *                       token endpoint URL as aud
+ *   The pre-fix world is AUD_TOKEN_ENDPOINT + AS_LENIENT (attack expected).
+ *   AS_LENIENT alone: secure (the client fix suffices). AUD_TOKEN_ENDPOINT
+ *   alone: the client no longer interoperates with a strict AS (executable
+ *   fails) and is secure.
  *   NO_META_CHECK       fixed aud rule, but the client records whatever
  *                       `issuer` the metadata claims (no RFC 8414 §3.3)
  *   Expected results: scripts/prove.sh; write-up: docs/results.md R12.
@@ -121,7 +125,7 @@ restriction metadata_issuer_validated:
   "All a i #t. MetaIssuer(a, i) @ #t ==> a = i"
 #endif
 
-#ifdef AUD_TOKEN_ENDPOINT | AS_LENIENT
+#ifdef AS_LENIENT
 // Pre-fix AS policy (RFC 7523 §3, OIDC Core §9): the issuer or the token
 // endpoint URL is an acceptable assertion audience.
 restriction assertion_audience_checked:

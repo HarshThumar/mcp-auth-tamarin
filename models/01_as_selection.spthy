@@ -37,6 +37,10 @@ begin
  *                          *claims*, without the RFC 8414 §3.3 check.
  *                          expected: P1 FALSIFIED (an attacker-run AS claims
  *                          the honest AS's issuer)
+ *   -D=NO_BINDING          removes only the issuer binding (one check per
+ *                          flag, for the ablation table docs/ablation.md;
+ *                          VULNERABLE = NO_BINDING + UNVALIDATED_ISSUER).
+ *                          expected: P1 FALSIFIED
  *   (no flag)              keyed by issuer AND the metadata issuer is
  *                          validated against the AS the client contacts.
  *                          expected: P1 verified
@@ -76,7 +80,7 @@ rule Register_Client:
   --[ Registered($C, $A, ~cred) ]->
     [ !ClientCred($C, $A, ~cred) ]
 
-#ifdef VULNERABLE
+#ifdef VULNERABLE | NO_BINDING
 #else
 // Credentials are looked up under the issuer recorded for this AS.
 restriction credential_bound_to_issuer:
