@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Run every model variant and check each lemma against its expected result.
 # Usage: scripts/prove.sh            (needs tamarin-prover and maude on PATH)
+#        JOBS=4 scripts/prove.sh     (run 4 variants in parallel)
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -18,37 +19,64 @@ expectations=(
   "models/02_code_and_audience.spthy|NO_AUD|executable|verified"
   "models/02_code_and_audience.spthy|NO_AUD|rs_accepts_only_consented|falsified"
   "models/02_code_and_audience.spthy|NO_AUD|token_secrecy|verified"
+  "models/02_code_and_audience.spthy|NO_AUD|session_integrity|verified"
+  "models/02_code_and_audience.spthy|NO_AUD|code_single_use|verified"
   "models/02_code_and_audience.spthy|NO_ISS|code_sources|verified"
   "models/02_code_and_audience.spthy|NO_ISS|token_sources|verified"
   "models/02_code_and_audience.spthy|NO_ISS|executable|verified"
   "models/02_code_and_audience.spthy|NO_ISS|rs_accepts_only_consented|verified"
   "models/02_code_and_audience.spthy|NO_ISS|token_secrecy|falsified"
+  "models/02_code_and_audience.spthy|NO_ISS|session_integrity|verified"
+  "models/02_code_and_audience.spthy|NO_ISS|code_single_use|verified"
   "models/02_code_and_audience.spthy|ISS_OPTIONAL|code_sources|verified"
   "models/02_code_and_audience.spthy|ISS_OPTIONAL|token_sources|verified"
   "models/02_code_and_audience.spthy|ISS_OPTIONAL|executable|verified"
   "models/02_code_and_audience.spthy|ISS_OPTIONAL|rs_accepts_only_consented|verified"
   "models/02_code_and_audience.spthy|ISS_OPTIONAL|token_secrecy|falsified"
+  "models/02_code_and_audience.spthy|ISS_OPTIONAL|session_integrity|verified"
+  "models/02_code_and_audience.spthy|ISS_OPTIONAL|code_single_use|verified"
   "models/02_code_and_audience.spthy|NO_RESOURCE|code_sources|verified"
   "models/02_code_and_audience.spthy|NO_RESOURCE|token_sources|verified"
   "models/02_code_and_audience.spthy|NO_RESOURCE|executable|verified"
   "models/02_code_and_audience.spthy|NO_RESOURCE|rs_accepts_only_consented|falsified"
   "models/02_code_and_audience.spthy|NO_RESOURCE|token_secrecy|verified"
+  "models/02_code_and_audience.spthy|NO_RESOURCE|session_integrity|verified"
+  "models/02_code_and_audience.spthy|NO_RESOURCE|code_single_use|verified"
   "models/02_code_and_audience.spthy|NO_STATE|code_sources|verified"
   "models/02_code_and_audience.spthy|NO_STATE|token_sources|verified"
   "models/02_code_and_audience.spthy|NO_STATE|executable|verified"
   "models/02_code_and_audience.spthy|NO_STATE|rs_accepts_only_consented|verified"
   "models/02_code_and_audience.spthy|NO_STATE|token_secrecy|verified"
+  "models/02_code_and_audience.spthy|NO_STATE|session_integrity|verified"
+  "models/02_code_and_audience.spthy|NO_STATE|code_single_use|verified"
+  "models/02_code_and_audience.spthy|NO_PKCE|code_sources|verified"
+  "models/02_code_and_audience.spthy|NO_PKCE|token_sources|verified"
+  "models/02_code_and_audience.spthy|NO_PKCE|executable|verified"
+  "models/02_code_and_audience.spthy|NO_PKCE|rs_accepts_only_consented|verified"
+  "models/02_code_and_audience.spthy|NO_PKCE|token_secrecy|verified"
+  "models/02_code_and_audience.spthy|NO_PKCE|session_integrity|verified"
+  "models/02_code_and_audience.spthy|NO_PKCE|code_single_use|verified"
+  "models/02_code_and_audience.spthy|NO_PKCE,NO_STATE|code_sources|verified"
+  "models/02_code_and_audience.spthy|NO_PKCE,NO_STATE|token_sources|verified"
+  "models/02_code_and_audience.spthy|NO_PKCE,NO_STATE|executable|verified"
+  "models/02_code_and_audience.spthy|NO_PKCE,NO_STATE|rs_accepts_only_consented|verified"
+  "models/02_code_and_audience.spthy|NO_PKCE,NO_STATE|token_secrecy|verified"
+  "models/02_code_and_audience.spthy|NO_PKCE,NO_STATE|session_integrity|falsified"
+  "models/02_code_and_audience.spthy|NO_PKCE,NO_STATE|code_single_use|verified"
   "models/02_code_and_audience.spthy|-|code_sources|verified"
   "models/02_code_and_audience.spthy|-|token_sources|verified"
   "models/02_code_and_audience.spthy|-|executable|verified"
   "models/02_code_and_audience.spthy|-|rs_accepts_only_consented|verified"
   "models/02_code_and_audience.spthy|-|token_secrecy|verified"
+  "models/02_code_and_audience.spthy|-|session_integrity|verified"
+  "models/02_code_and_audience.spthy|-|code_single_use|verified"
   "models/03_cimd_client_binding.spthy|-|client_key_secret|verified"
   "models/03_cimd_client_binding.spthy|-|code_sources|verified"
   "models/03_cimd_client_binding.spthy|-|token_sources|verified"
   "models/03_cimd_client_binding.spthy|-|rt_sources|verified"
   "models/03_cimd_client_binding.spthy|-|executable|verified"
   "models/03_cimd_client_binding.spthy|-|executable_refresh|verified"
+  "models/03_cimd_client_binding.spthy|-|code_single_use|verified"
   "models/03_cimd_client_binding.spthy|-|rs_accepts_only_consented|verified"
   "models/03_cimd_client_binding.spthy|-|token_secrecy|verified"
   "models/03_cimd_client_binding.spthy|-|refresh_token_secrecy|verified"
@@ -58,6 +86,7 @@ expectations=(
   "models/03_cimd_client_binding.spthy|NO_ISS|rt_sources|verified"
   "models/03_cimd_client_binding.spthy|NO_ISS|executable|verified"
   "models/03_cimd_client_binding.spthy|NO_ISS|executable_refresh|verified"
+  "models/03_cimd_client_binding.spthy|NO_ISS|code_single_use|verified"
   "models/03_cimd_client_binding.spthy|NO_ISS|rs_accepts_only_consented|verified"
   "models/03_cimd_client_binding.spthy|NO_ISS|token_secrecy|verified"
   "models/03_cimd_client_binding.spthy|NO_ISS|refresh_token_secrecy|verified"
@@ -67,6 +96,7 @@ expectations=(
   "models/03_cimd_client_binding.spthy|AS_NO_ASSERTION_AUD|rt_sources|verified"
   "models/03_cimd_client_binding.spthy|AS_NO_ASSERTION_AUD|executable|verified"
   "models/03_cimd_client_binding.spthy|AS_NO_ASSERTION_AUD|executable_refresh|verified"
+  "models/03_cimd_client_binding.spthy|AS_NO_ASSERTION_AUD|code_single_use|verified"
   "models/03_cimd_client_binding.spthy|AS_NO_ASSERTION_AUD|rs_accepts_only_consented|verified"
   "models/03_cimd_client_binding.spthy|AS_NO_ASSERTION_AUD|token_secrecy|verified"
   "models/03_cimd_client_binding.spthy|AS_NO_ASSERTION_AUD|refresh_token_secrecy|verified"
@@ -76,6 +106,7 @@ expectations=(
   "models/03_cimd_client_binding.spthy|NO_ISS,AS_NO_ASSERTION_AUD|rt_sources|verified"
   "models/03_cimd_client_binding.spthy|NO_ISS,AS_NO_ASSERTION_AUD|executable|verified"
   "models/03_cimd_client_binding.spthy|NO_ISS,AS_NO_ASSERTION_AUD|executable_refresh|verified"
+  "models/03_cimd_client_binding.spthy|NO_ISS,AS_NO_ASSERTION_AUD|code_single_use|verified"
   "models/03_cimd_client_binding.spthy|NO_ISS,AS_NO_ASSERTION_AUD|rs_accepts_only_consented|verified"
   "models/03_cimd_client_binding.spthy|NO_ISS,AS_NO_ASSERTION_AUD|token_secrecy|falsified"
   "models/03_cimd_client_binding.spthy|NO_ISS,AS_NO_ASSERTION_AUD|refresh_token_secrecy|falsified"
@@ -85,6 +116,7 @@ expectations=(
   "models/03_cimd_client_binding.spthy|RT_UNBOUND|rt_sources|verified"
   "models/03_cimd_client_binding.spthy|RT_UNBOUND|executable|verified"
   "models/03_cimd_client_binding.spthy|RT_UNBOUND|executable_refresh|verified"
+  "models/03_cimd_client_binding.spthy|RT_UNBOUND|code_single_use|verified"
   "models/03_cimd_client_binding.spthy|RT_UNBOUND|rs_accepts_only_consented|verified"
   "models/03_cimd_client_binding.spthy|RT_UNBOUND|token_secrecy|verified"
   "models/03_cimd_client_binding.spthy|RT_UNBOUND|refresh_token_secrecy|falsified"
@@ -94,14 +126,16 @@ expectations=(
   "models/03_cimd_client_binding.spthy|RT_UNBOUND,AS_NO_ASSERTION_AUD|rt_sources|verified"
   "models/03_cimd_client_binding.spthy|RT_UNBOUND,AS_NO_ASSERTION_AUD|executable|verified"
   "models/03_cimd_client_binding.spthy|RT_UNBOUND,AS_NO_ASSERTION_AUD|executable_refresh|verified"
+  "models/03_cimd_client_binding.spthy|RT_UNBOUND,AS_NO_ASSERTION_AUD|code_single_use|verified"
   "models/03_cimd_client_binding.spthy|RT_UNBOUND,AS_NO_ASSERTION_AUD|rs_accepts_only_consented|verified"
-  "models/03_cimd_client_binding.spthy|RT_UNBOUND,AS_NO_ASSERTION_AUD|token_secrecy|falsified"
-  "models/03_cimd_client_binding.spthy|RT_UNBOUND,AS_NO_ASSERTION_AUD|refresh_token_secrecy|falsified"
+  "models/03_cimd_client_binding.spthy|RT_UNBOUND,AS_NO_ASSERTION_AUD|token_secrecy_attack|verified"
+  "models/03_cimd_client_binding.spthy|RT_UNBOUND,AS_NO_ASSERTION_AUD|refresh_token_secrecy_attack|verified"
   "models/03_cimd_client_binding.spthy|PUBLIC|code_sources|verified"
   "models/03_cimd_client_binding.spthy|PUBLIC|token_sources|verified"
   "models/03_cimd_client_binding.spthy|PUBLIC|rt_sources|verified"
   "models/03_cimd_client_binding.spthy|PUBLIC|executable|verified"
   "models/03_cimd_client_binding.spthy|PUBLIC|executable_refresh|verified"
+  "models/03_cimd_client_binding.spthy|PUBLIC|code_single_use|verified"
   "models/03_cimd_client_binding.spthy|PUBLIC|rs_accepts_only_consented|verified"
   "models/03_cimd_client_binding.spthy|PUBLIC|token_secrecy|verified"
   "models/03_cimd_client_binding.spthy|PUBLIC|refresh_token_secrecy|verified"
@@ -110,6 +144,7 @@ expectations=(
   "models/03_cimd_client_binding.spthy|PUBLIC,NO_ISS|rt_sources|verified"
   "models/03_cimd_client_binding.spthy|PUBLIC,NO_ISS|executable|verified"
   "models/03_cimd_client_binding.spthy|PUBLIC,NO_ISS|executable_refresh|verified"
+  "models/03_cimd_client_binding.spthy|PUBLIC,NO_ISS|code_single_use|verified"
   "models/03_cimd_client_binding.spthy|PUBLIC,NO_ISS|rs_accepts_only_consented|verified"
   "models/03_cimd_client_binding.spthy|PUBLIC,NO_ISS|token_secrecy|falsified"
   "models/03_cimd_client_binding.spthy|PUBLIC,NO_ISS|refresh_token_secrecy|falsified"
@@ -118,6 +153,7 @@ expectations=(
   "models/03_cimd_client_binding.spthy|PUBLIC,NO_META_CHECK|rt_sources|verified"
   "models/03_cimd_client_binding.spthy|PUBLIC,NO_META_CHECK|executable|verified"
   "models/03_cimd_client_binding.spthy|PUBLIC,NO_META_CHECK|executable_refresh|verified"
+  "models/03_cimd_client_binding.spthy|PUBLIC,NO_META_CHECK|code_single_use|verified"
   "models/03_cimd_client_binding.spthy|PUBLIC,NO_META_CHECK|rs_accepts_only_consented|verified"
   "models/03_cimd_client_binding.spthy|PUBLIC,NO_META_CHECK|token_secrecy|falsified"
   "models/03_cimd_client_binding.spthy|PUBLIC,NO_META_CHECK|refresh_token_secrecy|falsified"
@@ -126,6 +162,7 @@ expectations=(
   "models/03_cimd_client_binding.spthy|PUBLIC,RT_UNBOUND|rt_sources|verified"
   "models/03_cimd_client_binding.spthy|PUBLIC,RT_UNBOUND|executable|verified"
   "models/03_cimd_client_binding.spthy|PUBLIC,RT_UNBOUND|executable_refresh|verified"
+  "models/03_cimd_client_binding.spthy|PUBLIC,RT_UNBOUND|code_single_use|verified"
   "models/03_cimd_client_binding.spthy|PUBLIC,RT_UNBOUND|rs_accepts_only_consented|verified"
   "models/03_cimd_client_binding.spthy|PUBLIC,RT_UNBOUND|token_secrecy|falsified"
   "models/03_cimd_client_binding.spthy|PUBLIC,RT_UNBOUND|refresh_token_secrecy|falsified"
@@ -135,6 +172,7 @@ expectations=(
   "models/03_cimd_client_binding.spthy|NO_META_CHECK|rt_sources|verified"
   "models/03_cimd_client_binding.spthy|NO_META_CHECK|executable|verified"
   "models/03_cimd_client_binding.spthy|NO_META_CHECK|executable_refresh|verified"
+  "models/03_cimd_client_binding.spthy|NO_META_CHECK|code_single_use|verified"
   "models/03_cimd_client_binding.spthy|NO_META_CHECK|rs_accepts_only_consented|verified"
   "models/03_cimd_client_binding.spthy|NO_META_CHECK|token_secrecy_attack|verified"
   "models/03_cimd_client_binding.spthy|NO_META_CHECK|refresh_token_secrecy_attack|verified"
@@ -170,23 +208,50 @@ expectations=(
   "models/04_id_jag.spthy|NO_RESOURCE_CLAIM|ras_grant_agreement|verified"
 )
 
-declare -A ran=()
+outfile() {  # model flag -> results file
+  local name variant
+  name="$(basename "$1" .spthy)"
+  if [[ "$2" == "-" ]]; then variant="fixed"; else variant="${2,,}"; variant="${variant//,/+}"; fi
+  echo "results/${name}.${variant}.txt"
+}
+
+run_variant() {  # model flag: one Tamarin run per variant, full derivation checks
+  local model=$1 flag=$2 out f
+  out="$(outfile "$model" "$flag")"
+  local args=(--prove --derivcheck-timeout=0 "$model")
+  if [[ "$flag" != "-" ]]; then
+    IFS=',' read -ra fl <<<"$flag"
+    for f in "${fl[@]}"; do args+=("-D=$f"); done
+  fi
+  echo "== tamarin-prover ${args[*]}"
+  tamarin-prover "${args[@]}" >"$out" 2>&1 || true
+}
+export -f run_variant outfile
+
+# 1. Run every variant once. JOBS=n runs n variants in parallel (default 1).
+printf '%s\n' "${expectations[@]}" | cut -d'|' -f1,2 | awk '!seen[$0]++' | tr '|' ' ' \
+  | xargs -P "${JOBS:-1}" -n 2 bash -c 'run_variant "$0" "$1"'
+
+# 2. Any wellformedness warning (including a derivation check) fails the run.
+declare -A checked=()
+for row in "${expectations[@]}"; do
+  IFS='|' read -r model flag _ _ <<<"$row"
+  out="$(outfile "$model" "$flag")"
+  if [[ -z "${checked[$out]:-}" ]]; then
+    checked[$out]=1
+    if grep -qE "WARNING:.*wellformedness" "$out"; then
+      echo "FAIL  $out: wellformedness warning"
+      fail=1
+    fi
+  fi
+done
+
+# 3. Compare each lemma with its expected result.
 for row in "${expectations[@]}"; do
   IFS='|' read -r model flag lemma expected <<<"$row"
   name="$(basename "$model" .spthy)"
-  if [[ "$flag" == "-" ]]; then variant="fixed"; else variant="${flag,,}"; variant="${variant//,/+}"; fi
-  out="results/${name}.${variant}.txt"
-
-  if [[ -z "${ran[$out]:-}" ]]; then
-    args=(--prove "$model")
-    if [[ "$flag" != "-" ]]; then
-      IFS=',' read -ra flags <<<"$flag"
-      for f in "${flags[@]}"; do args+=("-D=$f"); done
-    fi
-    echo "== tamarin-prover ${args[*]}"
-    tamarin-prover "${args[@]}" >"$out" 2>&1 || true
-    ran[$out]=1
-  fi
+  out="$(outfile "$model" "$flag")"
+  variant="$(basename "$out" .txt)"; variant="${variant#"${name}".}"
 
   line="$(grep -E "^[[:space:]]*${lemma} \((all-traces|exists-trace)\): " "$out" | tail -1 || true)"
   if [[ "$line" == *": ${expected} "* || "$line" == *": ${expected}" ]]; then
@@ -197,4 +262,7 @@ for row in "${expectations[@]}"; do
   fi
 done
 
+total=${#expectations[@]}
+helpers=$(printf '%s\n' "${expectations[@]}" | grep -cE '\|(code_sources|token_sources|rt_sources|executable|executable_refresh|client_key_secret|code_single_use)\|' || true)
+echo "Checked ${total} lemma results: $((total - helpers)) security-property results, ${helpers} helper/sanity lemmas."
 exit "$fail"

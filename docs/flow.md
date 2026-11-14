@@ -39,3 +39,4 @@ Check the exact parameters against the extension text before modelling (planned:
 - **P3 mix-up:** C never redeems a code at an AS other than the one that issued it (`iss`). → model 02
 - **P4 CIMD:** one client identity across ASes does not let AS₁ act as C at AS₂. → model 03
 - **P5 enterprise chain:** an ID-JAG for RS₁/AS₁ cannot be replayed to obtain access at RS₂/AS₂. → model 04
+- **P6 session integrity:** if an honest user's client session with an honest AS ends with a token, that AS issued it for that user and client (no code injection / login CSRF). → model 02

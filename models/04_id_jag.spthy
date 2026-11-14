@@ -3,8 +3,10 @@ begin
 
 builtins: signing
 
-// Access tokens are tagged opaque handles (as in model 02): no destructor.
-functions: at/1
+// Access tokens are tagged (as in model 02). The tag has a public
+// destructor, so it hides nothing and every rule variable is derivable.
+functions: at/1, unat/1
+equations: unat(at(x)) = x
 
 /*
  * Model 04: Enterprise-Managed Authorization (ID-JAG). Does an Identity
@@ -56,8 +58,11 @@ functions: at/1
  *   - One honest IdP, trusted by every honest RAS. Its key never leaks.
  *   - SSO (OIDC/SAML login and the ID token) is abstracted into the TLS
  *     channel from an honest client to the IdP: the IdP knows which client
- *     and which user it is serving. Users only sign in to honest clients,
- *     so attacker-run clients never obtain ID-JAGs for honest users.
+ *     and which user it is serving.
+ *     Attacker-controlled users ($U with User_Dishonest) may sign in to
+ *     attacker-run clients: the IdP then issues real ID-JAGs to the attacker
+ *     (client_id = the attacker's client). P2', P4 are stated for honest
+ *     users; honest users only sign in to honest clients.
  *   - Worst-case IdP policy: it issues an ID-JAG for any `audience` and
  *     `resource` the honest client asks for (the draft's "SHOULD check
  *     resource is governed by audience" is not relied on).
@@ -69,8 +74,9 @@ functions: at/1
  *     (RFC 9728 resource check assumed).
  *   - Every honest MCP server accepts tokens from every honest RAS whose
  *     audience is itself.
- *   - Left out: jti single-use, expiry, refresh tokens, scopes, DPoP / cnf,
- *     multiple IdPs, the `act` claim.
+ *   - Left out: jti single-use (no replay cache: this only strengthens the
+ *     attacker, so verified results carry over), expiry, refresh tokens,
+ *     scopes, DPoP / cnf, multiple IdPs, the `act` claim.
  */
 
 /* ------------------------------------------------------------------ */
@@ -112,7 +118,13 @@ rule Setup_Honest_Client:
 rule Setup_Dishonest_Client:
     [ Fr(~skC) ]
   --[ ClientSetup($C), Client_Dishonest($C) ]->
-    [ !ClientPk($C, pk(~skC)), Out(~skC) ]
+    [ !DishonestClient($C), !ClientPk($C, pk(~skC)), Out(~skC) ]
+
+// The attacker controls some user accounts at the IdP.
+rule Setup_Dishonest_User:
+    [ ]
+  --[ User_Dishonest($U) ]->
+    [ !DishonestUser($U) ]
 
 restriction idp_once:
   "All x y #i #j. IdPSetup(x) @ #i & IdPSetup(y) @ #j ==> #i = #j"
@@ -186,6 +198,16 @@ rule IdP_Issue_IDJAG:
   --[ IdJagIssued($I, $U, $A, $C, res) ]->
     [ FromIdP(~sid, < <'idjag', $I, $U, $A, $C, res, ~jti>
                     , sign(<'idjag', $I, $U, $A, $C, res, ~jti>, ~skI) >) ]
+
+// An attacker-controlled user signs in to an attacker-run client: the IdP authenticates that
+// client and issues it a genuine ID-JAG for any audience/resource it asks for.
+rule IdP_Issue_IDJAG_Dishonest_Client:
+    [ In(<'token_exchange', $E, $U, $A, res>), !DishonestClient($E)
+    , !DishonestUser($U)
+    , !IdPKey($I, ~skI), Fr(~jti) ]
+  --[ IdJagIssued($I, $U, $A, $E, res) ]->
+    [ Out(< <'idjag', $I, $U, $A, $E, res, ~jti>
+          , sign(<'idjag', $I, $U, $A, $E, res, ~jti>, ~skI) >) ]
 
 /* ------------------------------------------------------------------ */
 /* Client: JWT bearer grant at the RAS (RFC 7523) with private_key_jwt */
@@ -316,13 +338,14 @@ lemma rs_accepts_only_authorized:
      RSAccepts(rs, u, t) @ #i
      ==> Ex idp a c #j. IdJagIssued(idp, u, a, c, rs) @ #j"
 
-// P2': an honest MCP server accepts a token for U only if some client acting
+// P2': an honest MCP server accepts a token for an honest user U only if some client acting
 // for U set out to use THAT MCP server. Unlike P2, this does not fail by
 // definition when `resource` is omitted, so it is the meaningful check for
 // NO_RESOURCE_CLAIM.
 lemma rs_accepts_only_requested:
   "All rs u t #i.
      RSAccepts(rs, u, t) @ #i
+     & not (Ex #j. User_Dishonest(u) @ #j)
      ==> Ex sid c a #j. ClientStart(sid, c, u, rs, a) @ #j"
 
 // P3: a token from an honest RAS to an honest client, whose actual audience
@@ -334,11 +357,12 @@ lemma token_secrecy:
      & not (Ex #j. RS_Dishonest(rs) @ #j)
      ==> not (Ex #k. K(t) @ #k)"
 
-// P4: an honest RAS issues a token for U to client c only if the IdP issued
+// P4: an honest RAS issues a token for an honest user U to client c only if the IdP issued
 // an ID-JAG for U with aud = this RAS and client_id = c.
 lemma ras_grant_agreement:
   "All t a u c aud #i.
      TokenIssued(t, a, u, c, aud) @ #i
+     & not (Ex #j. User_Dishonest(u) @ #j)
      ==> Ex idp res #j. IdJagIssued(idp, u, a, c, res) @ #j"
 
 end

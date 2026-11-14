@@ -23,7 +23,7 @@ env:
 jobs:
   prove:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
 
@@ -64,7 +64,7 @@ jobs:
           tamarin-prover --version | head -3
 
       - name: Prove all models
-        run: bash scripts/prove.sh
+        run: JOBS=4 bash scripts/prove.sh
 
       - name: Upload Tamarin output
         if: always()

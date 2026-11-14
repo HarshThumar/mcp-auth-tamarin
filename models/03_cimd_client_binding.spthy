@@ -3,10 +3,11 @@ begin
 
 builtins: hashing, signing
 
-// Codes, access tokens and refresh tokens are tagged opaque handles (no
-// destructors), as in model 02: no type confusion between them and other
-// fresh values. The attacker can still build cd(x) / at(x) / rt(x) itself.
-functions: cd/1, at/1, rt/1
+// Codes, access tokens and refresh tokens are tagged, as in model 02: no
+// type confusion between them and other fresh values. The tags have public
+// destructors, so they hide nothing and every rule variable is derivable.
+functions: cd/1, at/1, rt/1, uncd/1, unat/1, unrt/1
+equations: uncd(cd(x)) = x, unat(at(x)) = x, unrt(rt(x)) = x
 
 /*
  * Model 03: one client identity at many authorization servers (CIMD).
@@ -58,15 +59,33 @@ functions: cd/1, at/1, rt/1
  *     including an honest AS's issuer.
  *   - Honest ASes always send and advertise `iss` (model 02 covers the SHOULD).
  *   - The CIMD document is fetched over HTTPS from the client's own URL, so
- *     !Client / !CIMD facts are authentic. Only honest clients are modelled.
+ *     !Client / !CIMD facts are authentic. The attacker also runs its own
+ *     CIMD clients ($E, its own key), which get real codes, tokens and
+ *     refresh tokens at honest ASes. P3/P4 are stated for honest clients.
+ *   - Codes are single-use (consumed at the token endpoint). Client
+ *     assertions are checked with verify() (no pattern matching on keys).
  *   - `state` is left out: model 02 showed P2/P3 do not depend on it.
  *   - The authorization endpoint always sends the code to the client's
  *     registered redirect URI (the AS validates it against the CIMD document).
  *   - Left out: refresh-token rotation, code single-use, DPoP, expiry,
- *     scopes, the browser, dishonest users, dishonest clients.
+ *     scopes, the browser, session integrity (CSRF).
  *   - Checks are written as restrictions on actions (MetaIssuer, IssCheck,
  *     RefreshAt, AssertionAud) so each flag removes exactly one equality.
  */
+
+// ATTACK_LEMMAS: the confidential client under NO_META_CHECK, and under
+// RT_UNBOUND + AS_NO_ASSERTION_AUD. There the all-traces P3/P4 search does
+// not finish, so these variants state the attacks as exists-trace lemmas,
+// and leave out the attacker's own clients (Setup_Dishonest_Client), which
+// the attacks do not use. Removing rules only removes traces, so every
+// attack found here is also an attack on the full model.
+// (#ifdef takes &, | and not, but no parentheses: hence the computed flag.)
+#ifdef NO_META_CHECK
+#define ATTACK_LEMMAS
+#endif
+#ifdef RT_UNBOUND & AS_NO_ASSERTION_AUD
+#define ATTACK_LEMMAS
+#endif
 
 /* ------------------------------------------------------------------ */
 /* Setup                                                              */
@@ -105,6 +124,11 @@ rule Setup_Client:
     [ ]
   --[ ClientSetup($C) ]->
     [ !Client($C) ]
+
+rule Setup_Dishonest_Client:
+    [ ]
+  --[ ClientSetup($E), Client_Dishonest($E) ]->
+    [ !DishonestClient($E) ]
 #else
 // Confidential CIMD client: one signing key, published in its metadata
 // document (jwks), used at every AS.
@@ -114,11 +138,22 @@ rule Setup_Client:
     [ !Client($C), !ClientKey($C, ~sk), !CIMD($C, pk(~sk)), Out(pk(~sk)) ]
 #endif
 
+#ifdef not PUBLIC & not ATTACK_LEMMAS
+// Attacker-run CIMD client: its key is the attacker's.
+rule Setup_Dishonest_Client:
+    [ Fr(~sk) ]
+  --[ ClientSetup($E), Client_Dishonest($E) ]->
+    [ !DishonestClient($E), !CIMD($E, pk(~sk)), Out(~sk) ]
+#endif
+
 restriction as_set_up_once:
   "All x #i #j. ASSetup(x) @ #i & ASSetup(x) @ #j ==> #i = #j"
 
 restriction rs_set_up_once:
   "All x #i #j. RSSetup(x) @ #i & RSSetup(x) @ #j ==> #i = #j"
+
+restriction equality:
+  "All x y #t. Eq(x, y) @ #t ==> x = y"
 
 restriction client_set_up_once:
   "All x #i #j. ClientSetup(x) @ #i & ClientSetup(x) @ #j ==> #i = #j"
@@ -183,8 +218,18 @@ rule AS_Authorize:
     [ In(<'authz_request', $AS, $C, challenge, $RS>)
     , !HonestAS($AS), !Client($C), Fr(~code) ]
   --[ Consent($U, $C, $RS, $AS), CodeIssued(cd(~code)) ]->
-    [ !Code($AS, cd(~code), $U, $C, challenge, $RS)
+    [ Code($AS, cd(~code), $U, $C, challenge, $RS)
     , ToClient($C, <'authz_response', cd(~code), $AS>) ]
+
+#ifdef not ATTACK_LEMMAS | PUBLIC
+// Authorization for an attacker-run client: the code goes to the attacker.
+rule AS_Authorize_Dishonest_Client:
+    [ In(<'authz_request', $AS, $E, challenge, $RS>)
+    , !HonestAS($AS), !DishonestClient($E), Fr(~code) ]
+  --[ Consent($U, $E, $RS, $AS), CodeIssued(cd(~code)) ]->
+    [ Code($AS, cd(~code), $U, $E, challenge, $RS)
+    , Out(<'authz_response', cd(~code), $AS>) ]
+#endif
 
 rule Attacker_Callback_Iss:
     [ In(<'authz_response', cd(code), $iss>) ]
@@ -230,7 +275,7 @@ rule Client_Token_Request:
   --[ ClientRedeems(~sid, $C, $AS, cd(code)) ]->
     [ St_Client_2(~sid, $C, $RS, $AS, $I)
     , ToAS($AS, ~sid, <'token_request', $C, cd(code), ~ver, $RS,
-                       sign(<'cassert', $C, $I, ~jti>, ~sk)>) ]
+                       <<'cassert', $C, $I, ~jti>, sign(<'cassert', $C, $I, ~jti>, ~sk)>>) ]
 
 #endif
 
@@ -243,9 +288,9 @@ rule Client_Token_Request:
 rule AS_Token:
     [ ToAS($AS, ~sid, <'token_request', $C, cd(~code), ~ver, $RS, 'none'>)
     , !HonestAS($AS)
-    , !Code($AS, cd(~code), $U, $C, h(~ver), $RS)
+    , Code($AS, cd(~code), $U, $C, h(~ver), $RS)
     , Fr(~tok), Fr(~r) ]
-  --[ TokenIssued(at(~tok), $AS, $U, $RS)
+  --[ TokenIssued(at(~tok), $AS, $U, $C, $RS), CodeUsed(cd(~code))
     , RTIssued(rt(~r), $AS, $U, $C, $RS) ]->
     [ !Token(at(~tok), $AS, $U, $RS)
     , !Refresh(rt(~r), $AS, $U, $C, $RS)
@@ -254,9 +299,9 @@ rule AS_Token:
 rule AS_Token_From_Network:
     [ In(<'token_request', $C, cd(~code), ver, $RS, 'none'>)
     , !HonestAS($AS)
-    , !Code($AS, cd(~code), $U, $C, h(ver), $RS)
+    , Code($AS, cd(~code), $U, $C, h(ver), $RS)
     , Fr(~tok), Fr(~r) ]
-  --[ TokenIssued(at(~tok), $AS, $U, $RS)
+  --[ TokenIssued(at(~tok), $AS, $U, $C, $RS), CodeUsed(cd(~code))
     , RTIssued(rt(~r), $AS, $U, $C, $RS) ]->
     [ !Token(at(~tok), $AS, $U, $RS)
     , !Refresh(rt(~r), $AS, $U, $C, $RS)
@@ -266,12 +311,13 @@ rule AS_Token_From_Network:
 
 rule AS_Token:
     [ ToAS($AS, ~sid, <'token_request', $C, cd(~code), ~ver, $RS,
-                       sign(<'cassert', $C, aud, jti>, ~sk)>)
-    , !HonestAS($AS), !CIMD($C, pk(~sk))
-    , !Code($AS, cd(~code), $U, $C, h(~ver), $RS)
+                       <<'cassert', $C, aud, jti>, sigC>>)
+    , !HonestAS($AS), !CIMD($C, pkC)
+    , Code($AS, cd(~code), $U, $C, h(~ver), $RS)
     , Fr(~tok), Fr(~r) ]
-  --[ AssertionAud($AS, aud)
-    , TokenIssued(at(~tok), $AS, $U, $RS)
+  --[ Eq(verify(sigC, <'cassert', $C, aud, jti>, pkC), true)
+    , AssertionAud($AS, aud)
+    , TokenIssued(at(~tok), $AS, $U, $C, $RS), CodeUsed(cd(~code))
     , RTIssued(rt(~r), $AS, $U, $C, $RS) ]->
     [ !Token(at(~tok), $AS, $U, $RS)
     , !Refresh(rt(~r), $AS, $U, $C, $RS)
@@ -279,12 +325,13 @@ rule AS_Token:
 
 rule AS_Token_From_Network:
     [ In(<'token_request', $C, cd(~code), ver, $RS,
-          sign(<'cassert', $C, aud, jti>, ~sk)>)
-    , !HonestAS($AS), !CIMD($C, pk(~sk))
-    , !Code($AS, cd(~code), $U, $C, h(ver), $RS)
+          <<'cassert', $C, aud, jti>, sigC>>)
+    , !HonestAS($AS), !CIMD($C, pkC)
+    , Code($AS, cd(~code), $U, $C, h(ver), $RS)
     , Fr(~tok), Fr(~r) ]
-  --[ AssertionAud($AS, aud)
-    , TokenIssued(at(~tok), $AS, $U, $RS)
+  --[ Eq(verify(sigC, <'cassert', $C, aud, jti>, pkC), true)
+    , AssertionAud($AS, aud)
+    , TokenIssued(at(~tok), $AS, $U, $C, $RS), CodeUsed(cd(~code))
     , RTIssued(rt(~r), $AS, $U, $C, $RS) ]->
     [ !Token(at(~tok), $AS, $U, $RS)
     , !Refresh(rt(~r), $AS, $U, $C, $RS)
@@ -335,14 +382,14 @@ rule Client_Refresh:
 rule AS_Refresh:
     [ ToAS($AS, ~sid, <'refresh_request', $C, rt(~r), 'none'>)
     , !HonestAS($AS), !Refresh(rt(~r), $AS, $U, $C, $RS), Fr(~tok) ]
-  --[ TokenIssued(at(~tok), $AS, $U, $RS), RefreshAccepted($AS, $U, $C, $RS) ]->
+  --[ TokenIssued(at(~tok), $AS, $U, $C, $RS), RefreshAccepted($AS, $U, $C, $RS) ]->
     [ !Token(at(~tok), $AS, $U, $RS)
     , FromAS(~sid, <'refresh_response', at(~tok)>) ]
 
 rule AS_Refresh_From_Network:
     [ In(<'refresh_request', $C, rt(~r), 'none'>)
     , !HonestAS($AS), !Refresh(rt(~r), $AS, $U, $C, $RS), Fr(~tok) ]
-  --[ TokenIssued(at(~tok), $AS, $U, $RS), RefreshAccepted($AS, $U, $C, $RS) ]->
+  --[ TokenIssued(at(~tok), $AS, $U, $C, $RS), RefreshAccepted($AS, $U, $C, $RS) ]->
     [ !Token(at(~tok), $AS, $U, $RS)
     , Out(at(~tok)) ]
 
@@ -354,24 +401,26 @@ rule Client_Refresh:
   --[ MetaIssuer($AS2, $I2), RefreshAt($I, $I2)
     , ClientRefreshes($C, $AS2, rt(r)) ]->
     [ ToAS($AS2, ~sid2, <'refresh_request', $C, rt(r),
-                         sign(<'cassert', $C, $I2, ~jti>, ~sk)>) ]
+                         <<'cassert', $C, $I2, ~jti>, sign(<'cassert', $C, $I2, ~jti>, ~sk)>>) ]
 
 rule AS_Refresh:
     [ ToAS($AS, ~sid, <'refresh_request', $C, rt(~r),
-                       sign(<'cassert', $C, aud, jti>, ~sk)>)
-    , !HonestAS($AS), !CIMD($C, pk(~sk))
+                       <<'cassert', $C, aud, jti>, sigC>>)
+    , !HonestAS($AS), !CIMD($C, pkC)
     , !Refresh(rt(~r), $AS, $U, $C, $RS), Fr(~tok) ]
-  --[ AssertionAud($AS, aud)
-    , TokenIssued(at(~tok), $AS, $U, $RS), RefreshAccepted($AS, $U, $C, $RS) ]->
+  --[ Eq(verify(sigC, <'cassert', $C, aud, jti>, pkC), true)
+    , AssertionAud($AS, aud)
+    , TokenIssued(at(~tok), $AS, $U, $C, $RS), RefreshAccepted($AS, $U, $C, $RS) ]->
     [ !Token(at(~tok), $AS, $U, $RS)
     , FromAS(~sid, <'refresh_response', at(~tok)>) ]
 
 rule AS_Refresh_From_Network:
-    [ In(<'refresh_request', $C, rt(~r), sign(<'cassert', $C, aud, jti>, ~sk)>)
-    , !HonestAS($AS), !CIMD($C, pk(~sk))
+    [ In(<'refresh_request', $C, rt(~r), <<'cassert', $C, aud, jti>, sigC>>)
+    , !HonestAS($AS), !CIMD($C, pkC)
     , !Refresh(rt(~r), $AS, $U, $C, $RS), Fr(~tok) ]
-  --[ AssertionAud($AS, aud)
-    , TokenIssued(at(~tok), $AS, $U, $RS), RefreshAccepted($AS, $U, $C, $RS) ]->
+  --[ Eq(verify(sigC, <'cassert', $C, aud, jti>, pkC), true)
+    , AssertionAud($AS, aud)
+    , TokenIssued(at(~tok), $AS, $U, $C, $RS), RefreshAccepted($AS, $U, $C, $RS) ]->
     [ !Token(at(~tok), $AS, $U, $RS)
     , Out(at(~tok)) ]
 
@@ -418,7 +467,7 @@ lemma code_sources [sources]:
 lemma token_sources [sources]:
   "All sid c rs tok #i.
      ClientUsesToken(sid, c, rs, tok) @ #i
-     ==> (Ex as u aud #j. TokenIssued(tok, as, u, aud) @ #j & #j < #i)
+     ==> (Ex as u c2 aud #j. TokenIssued(tok, as, u, c2, aud) @ #j & #j < #i)
        | (Ex #j. KU(tok) @ #j & #j < #i)"
 
 lemma rt_sources [sources]:
@@ -441,52 +490,49 @@ lemma executable_refresh:
      & not (Ex x #j. AS_Dishonest(x) @ #j)
      & not (Ex x #j. RS_Dishonest(x) @ #j)"
 
+// Codes are single-use: an honest AS redeems each code at most once.
+lemma code_single_use:
+  "All c #i #j. CodeUsed(c) @ #i & CodeUsed(c) @ #j ==> #i = #j"
+
 // P2
 lemma rs_accepts_only_consented:
   "All rs u aud t #i.
      RSAccepts(rs, u, aud, t) @ #i
      ==> Ex c as #j. Consent(u, c, rs, as) @ #j"
 
-// P3 / P4. For the confidential client under NO_META_CHECK the all-traces
-// versions do not terminate, so that one variant states the attack as an
-// exists-trace lemma instead. (No nested #ifdef in Tamarin, hence the
-// computed flag ALLTRACES_SECRECY.)
-#ifdef PUBLIC
-#define ALLTRACES_SECRECY
-#endif
-#ifdef NO_META_CHECK
-#else
-#define ALLTRACES_SECRECY
-#endif
-
-#ifdef ALLTRACES_SECRECY
+// P3 / P4 (see ATTACK_LEMMAS at the top of the file).
+#ifdef not ATTACK_LEMMAS | PUBLIC
 
 lemma token_secrecy:
-  "All t as u rs #i.
-     TokenIssued(t, as, u, rs) @ #i
+  "All t as u c rs #i.
+     TokenIssued(t, as, u, c, rs) @ #i
      & not (Ex #j. RS_Dishonest(rs) @ #j)
+     & not (Ex #j. Client_Dishonest(c) @ #j)
      ==> not (Ex #k. K(t) @ #k)"
 
 lemma refresh_token_secrecy:
   "All r as u c rs #i.
      RTIssued(r, as, u, c, rs) @ #i
      & not (Ex #j. RS_Dishonest(rs) @ #j)
+     & not (Ex #j. Client_Dishonest(c) @ #j)
      ==> not (Ex #k. K(r) @ #k)"
 
 #else
 
-// Confidential client, NO_META_CHECK: the all-traces secrecy lemmas do not
-// terminate. The attack is stated instead as the existence of
-// a trace violating P3 / P4. Finding such a trace is the same result as
-// falsifying the all-traces lemma. token_secrecy_attack asks for the token
-// to come from a refresh (RefreshAccepted at the same step): a narrower
-// statement that guides the search; any such trace also violates P3.
+// Confidential client, NO_META_CHECK or RT_UNBOUND + AS_NO_ASSERTION_AUD:
+// the all-traces secrecy lemmas do not finish. The attack is stated instead
+// as the existence of a trace violating P3 / P4. Finding such a trace is the
+// same result as falsifying the all-traces lemma. token_secrecy_attack asks
+// for the token to come from a refresh (RefreshAccepted at the same step):
+// a narrower statement that guides the search; any such trace also
+// violates P3.
 lemma token_secrecy_attack:
   exists-trace
   "Ex t as u c rs #i #k.
-     TokenIssued(t, as, u, rs) @ #i
+     TokenIssued(t, as, u, c, rs) @ #i
      & RefreshAccepted(as, u, c, rs) @ #i
      & not (Ex #j. RS_Dishonest(rs) @ #j)
+     & not (Ex #j. Client_Dishonest(c) @ #j)
      & K(t) @ #k"
 
 lemma refresh_token_secrecy_attack:
@@ -494,6 +540,7 @@ lemma refresh_token_secrecy_attack:
   "Ex r as u c rs #i #k.
      RTIssued(r, as, u, c, rs) @ #i
      & not (Ex #j. RS_Dishonest(rs) @ #j)
+     & not (Ex #j. Client_Dishonest(c) @ #j)
      & K(r) @ #k"
 
 #endif

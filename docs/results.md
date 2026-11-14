@@ -1,6 +1,6 @@
 # Results
 
-*Model 01 last checked 9 Nov 2026, model 02 on 13 Nov 2026, models 03 and 04 on 14 Nov 2026: Tamarin 1.12.0, Maude 3.5.1 (local WSL run; CI runs the same script).* `scripts/prove.sh` (and CI) checks these expectations automatically: 159/159 pass, about 17 minutes locally. The full Tamarin output is saved in `results/` and uploaded as a CI artifact.
+*All models last checked 14 Nov 2026 with Tamarin 1.12.0 and Maude 3.5.1 (local WSL run; CI runs the same script).* `scripts/prove.sh` (and CI) checks every expectation automatically: **196/196 pass** (79 security-property results, 117 helper or sanity lemmas), with no well-formedness warnings, in about 40 minutes locally with `JOBS=4`. The full Tamarin output is saved in `results/` and uploaded as a CI artifact.
 
 | Model | Variant | Lemma | Expected | Actual | Notes |
 |---|---|---|---|---|---|
@@ -8,57 +8,53 @@
 | 01 | VULNERABLE | client_credential_secrecy | **falsified** | ✅ falsified (attack found) | attack: malicious RS names its own AS |
 | 01 | fixed | executable | verified | ✅ verified | |
 | 01 | fixed | client_credential_secrecy | verified | ✅ verified | credential bound to its AS |
-| 02 | all six | code_sources, token_sources | verified | ✅ verified | helper (`[sources]`) lemmas, proved by induction; they make the main lemmas terminate |
-| 02 | NO_AUD | executable | verified | ✅ verified (7 steps) | |
-| 02 | NO_AUD | rs_accepts_only_consented | **falsified** | ✅ falsified (8 steps) | R1 below: token replayed from a malicious MCP server to an honest one |
-| 02 | NO_AUD | token_secrecy | verified | ✅ verified (19 steps) | |
-| 02 | NO_ISS | executable | verified | ✅ verified (7 steps) | |
-| 02 | NO_ISS | rs_accepts_only_consented | verified | ✅ verified (32 steps) | |
-| 02 | NO_ISS | token_secrecy | **falsified** | ✅ falsified (11 steps) | R2 below: AS mix-up despite PKCE |
-| 02 | ISS_OPTIONAL | executable | verified | ✅ verified (7 steps) | |
-| 02 | ISS_OPTIONAL | rs_accepts_only_consented | verified | ✅ verified (77 steps) | |
-| 02 | ISS_OPTIONAL | token_secrecy | **falsified** | ✅ falsified (13 steps) | R3 below: same mix-up when the honest AS omits `iss` |
-| 02 | NO_RESOURCE | executable | verified | ✅ verified (7 steps) | |
-| 02 | NO_RESOURCE | rs_accepts_only_consented | **falsified** | ✅ falsified (8 steps) | R4 below: AS ignores `resource`, enabling cross-RS replay |
-| 02 | NO_RESOURCE | token_secrecy | verified | ✅ verified (19 steps) | |
-| 02 | NO_STATE | executable | verified | ✅ verified (6 steps) | |
-| 02 | NO_STATE | rs_accepts_only_consented | verified | ✅ verified (30 steps) | R5 below: P2/P3 do not depend on `state` |
-| 02 | NO_STATE | token_secrecy | verified | ✅ verified (19 steps) | |
-| 02 | fixed | executable | verified | ✅ verified (7 steps) | |
-| 02 | fixed | rs_accepts_only_consented | verified | ✅ verified (30 steps) | audience checked |
-| 02 | fixed | token_secrecy | verified | ✅ verified (19 steps) | `iss` always sent and checked |
 
-*Note on lemma count: The 34 individual expectations checked by `scripts/prove.sh` comprise: 4 for Model 01 (2 lemmas × 2 variants) + 30 for Model 02 (5 lemmas × 6 variants: `code_sources`, `token_sources`, `executable`, `rs_accepts_only_consented`, `token_secrecy`).*
+### Model 02: code and token binding, session integrity (revised 14 Nov 2026)
 
-### Model 03: one CIMD client identity at many ASes (14 Nov 2026)
+P2 = `rs_accepts_only_consented`, P3 = `token_secrecy`, P6 = `session_integrity`. In every variant the helper lemmas (`code_sources`, `token_sources`), `executable` and `code_single_use` are verified. Numbers are proof steps. The attacker controls its own user accounts and its own clients (see [threat-model.md](threat-model.md)).
 
-P3 = `token_secrecy`, P4 = `refresh_token_secrecy`. In every variant below, the helper lemmas (`client_key_secret`, three `[sources]` lemmas), `executable`, `executable_refresh` and P2 (`rs_accepts_only_consented`) are verified. Numbers are proof steps.
+| Variant | P2 | P3 | P6 | Write-up |
+|---|---|---|---|---|
+| fixed | ✅ (72) | ✅ (29) | ✅ (49) | |
+| `NO_AUD` | ❌ falsified (8) | ✅ (29) | ✅ (49) | R1 |
+| `NO_ISS` | ✅ (74) | ❌ falsified (11) | ✅ (55) | R2 |
+| `ISS_OPTIONAL` | ✅ (206) | ❌ falsified (12) | ✅ (108) | R3 |
+| `NO_RESOURCE` | ❌ falsified (8) | ✅ (33) | ✅ (49) | R4 |
+| `NO_STATE` | ✅ (84) | ✅ (35) | ✅ (61) | R5: PKCE alone keeps P6 |
+| `NO_PKCE` | ✅ (72) | ✅ (30) | ✅ (49) | R5: `state` alone keeps P6 |
+| `NO_PKCE` + `NO_STATE` | ✅ (84) | ✅ (36) | ❌ falsified (5) | R5: code injection |
+
+### Model 03: one CIMD client identity at many ASes (revised 14 Nov 2026)
+
+P3 = `token_secrecy`, P4 = `refresh_token_secrecy`. In every variant below, the helper lemmas (`client_key_secret`, three `[sources]` lemmas), `executable`, `executable_refresh`, `code_single_use` and P2 (`rs_accepts_only_consented`) are verified. Numbers are proof steps. The attacker runs its own CIMD clients, which hold genuine codes, tokens and refresh tokens; client assertions are checked with `verify`. All results match the first version (without attacker clients).
 
 | Client | Checks removed | P3 | P4 | Write-up |
 |---|---|---|---|---|
-| confidential (`private_key_jwt`) | none | ✅ verified (84) | ✅ verified (22) | combined binding rule holds |
-| confidential | `NO_ISS` | ✅ verified (92) | ✅ verified (25) | R6: assertion `aud` alone stops mix-up |
-| confidential | `AS_NO_ASSERTION_AUD` | ✅ verified (99) | ✅ verified (22) | `iss` alone stops mix-up |
-| confidential | `NO_ISS` + `AS_NO_ASSERTION_AUD` | ❌ falsified (13) | ❌ falsified (11) | R6 |
-| confidential | `RT_UNBOUND` | ✅ verified (139) | ❌ falsified (9) | R7: refresh token leaks but is useless |
-| confidential | `RT_UNBOUND` + `AS_NO_ASSERTION_AUD` | ❌ falsified (10) | ❌ falsified (9) | R7 |
-| confidential | `NO_META_CHECK` | ❌ attack trace found (14) | ❌ attack trace found (9) | R8 |
-| public (`none`) | none | ✅ verified (72) | ✅ verified (19) | combined binding rule holds |
+| confidential (`private_key_jwt`) | none | ✅ verified (90) | ✅ verified (24) | combined binding rule holds |
+| confidential | `NO_ISS` | ✅ verified (94) | ✅ verified (26) | R6: assertion `aud` alone stops mix-up |
+| confidential | `AS_NO_ASSERTION_AUD` | ✅ verified (240) | ✅ verified (39) | `iss` alone stops mix-up |
+| confidential | `NO_ISS` + `AS_NO_ASSERTION_AUD` | ❌ falsified (15) | ❌ falsified (12) | R6 |
+| confidential | `RT_UNBOUND` | ✅ verified (151) | ❌ falsified (9) | R7: refresh token leaks but is useless |
+| confidential | `RT_UNBOUND` + `AS_NO_ASSERTION_AUD` | ❌ attack trace found (12) | ❌ attack trace found (9) | R7 |
+| confidential | `NO_META_CHECK` | ❌ attack trace found (16) | ❌ attack trace found (9) | R8 |
+| public (`none`) | none | ✅ verified (78) | ✅ verified (21) | combined binding rule holds |
 | public | `NO_ISS` | ❌ falsified (8) | ❌ falsified (8) | as model 02 R2 |
 | public | `NO_META_CHECK` | ❌ falsified (8) | ❌ falsified (8) | R8 |
 | public | `RT_UNBOUND` | ❌ falsified (8) | ❌ falsified (8) | R7 |
 
+"Attack trace found" means the variant states the attack as an `exists-trace` lemma (`token_secrecy_attack`, `refresh_token_secrecy_attack`), because the all-traces search does not finish. These two variants also leave out the attacker-run clients, which the attacks do not need: with them the search did not finish in 25 minutes, without them it does. Removing rules only removes traces, so a trace found is still an attack on the full model and a counterexample to the all-traces lemma; see R8.
+
 ### Model 04: Enterprise-Managed Authorization / ID-JAG (14 Nov 2026)
 
-P2 = `rs_accepts_only_authorized`, P2' = `rs_accepts_only_requested`, P3 = `token_secrecy`, P4 = `ras_grant_agreement`. `token_sources` and `executable` are verified in every variant.
+P2 = `rs_accepts_only_authorized`, P2' = `rs_accepts_only_requested`, P3 = `token_secrecy`, P4 = `ras_grant_agreement`. `token_sources` and `executable` are verified in every variant. The attacker registers its own clients and controls some user accounts, which hold genuine ID-JAGs (revised 14 Nov; results unchanged from the first version without them).
 
 | Variant | P2 | P2' | P3 | P4 | Write-up |
 |---|---|---|---|---|---|
-| fixed | ✅ (20) | ✅ (20) | ✅ (16) | ✅ (13) | |
-| `NO_IDJAG_AUD` | ✅ | ✅ | ✅ | ✅ | R9: client binding alone suffices |
-| `NO_CLIENT_BINDING` | ✅ | ✅ | ✅ | ✅ | R9: ID-JAG `aud` alone suffices |
-| `NO_IDJAG_AUD` + `NO_CLIENT_BINDING` | ✅ | ✅ | ✅ | ❌ falsified (10) | R9: cross-RAS ID-JAG replay |
-| `NO_RESOURCE_CLAIM` | ❌ (by definition) | ❌ falsified (6) | ❌ falsified (8) | ✅ | R10 |
+| fixed | ✅ (21) | ✅ (21) | ✅ (16) | ✅ (14) | |
+| `NO_IDJAG_AUD` | ✅ (21) | ✅ (21) | ✅ (17) | ✅ (16) | R9: client binding alone suffices |
+| `NO_CLIENT_BINDING` | ✅ (22) | ✅ (22) | ✅ (18) | ✅ (15) | R9: ID-JAG `aud` alone suffices |
+| `NO_IDJAG_AUD` + `NO_CLIENT_BINDING` | ✅ (22) | ✅ (22) | ✅ (19) | ❌ falsified (10) | R9: cross-RAS ID-JAG replay |
+| `NO_RESOURCE_CLAIM` | ❌ (by definition) | ❌ falsified (6) | ❌ falsified (8) | ✅ (28) | R10 |
 
 ## Findings and open questions
 
@@ -94,15 +90,13 @@ None of these is a new vulnerability. Each one is the model **rediscovering a pu
 - **Modelling note:** `token_secrecy` is keyed on the audience the client *requested*, so it stays verified here even though the attacker holds a token that the honest server accepts. P2 is the lemma that catches this variant.
 - **Next step:** a question for review: should the spec say how a client can tell whether an AS honours `resource`? Not turned into a conformance test (see [conformance-test-draft.md](conformance-test-draft.md)).
 
-### R5 (13 Nov 2026): P2 and P3 do not depend on the `state` parameter
-- **Model + lemma:** 02 `-D=NO_STATE`, all 5 lemmas verified (`executable` in 6 steps, `rs_accepts_only_consented` in 30 steps, `token_secrecy` in 19 steps).
-- **What the spec says:** "MCP clients **SHOULD** use and verify state parameters in the authorization code flow and discard any results that do not include or have a mismatch with the original state." (MCP Security Considerations, Open Redirection)
-- **What the model shows:** with the client using the public constant `'no_state'`, P2 (`rs_accepts_only_consented`) and P3 (`token_secrecy`) still hold, as long as PKCE is enforced and `iss` is always sent and checked.
-- **Limits of this result (read before citing it):**
-  1. In **every** variant, `state` travels in the public front-channel authorization request, so the Dolev-Yao attacker always knows it. `state` therefore gives no protection in the fixed variant either, and `NO_STATE` differs from fixed only in that the value is a constant. The result is "P2/P3 never relied on `state`", not "removing `state` was shown safe".
-  2. The model has **no dishonest user** and **no session-integrity lemma** (e.g. "the token a client ends up with belongs to the user who started the session"). The attacks `state` is meant to stop (CSRF, injection of the attacker's own code to log the victim into the attacker's account) are therefore **not modelled**, and this result says nothing about them.
-- **Is it new?** No. It is consistent with OAuth 2.1 / RFC 9700, which say PKCE can take over `state`'s CSRF role; the model does not test that claim.
-- **Next step (open):** add a dishonest user and a session-integrity lemma so G7 becomes a real test of `state` vs PKCE.
+### R5 (revised 14 Nov 2026): `state` or PKCE, either one, keeps session integrity
+- **Model + lemma:** 02, `session_integrity` (P6). `-D=NO_STATE`: verified (61 steps). `-D=NO_PKCE`: verified (49 steps). `-D=NO_PKCE -D=NO_STATE`: falsified (5 steps).
+- **What the spec says:** "MCP clients **SHOULD** use and verify state parameters in the authorization code flow and discard any results that do not include or have a mismatch with the original state." (MCP Security Considerations, Open Redirection.) PKCE is required.
+- **What the model shows:** P6 says that if an honest user's client session with an honest AS ends with a token, the AS issued that token for that user and that client. With both defences removed, the attacker gets a code bound to a different account (for example its own) and injects it into the victim's callback; the client redeems it and ends up holding a token for the wrong account (code injection / login CSRF). With a secret per-session `state`, the client rejects the foreign callback. With PKCE, the AS rejects the code because it is bound to a different challenge. Either one alone is enough in this model, and P2/P3 do not depend on either.
+- **Scope:** the user's authorization request travels over HTTPS (the network does not see that session's `state` or challenge), and an attacker-run AS sees every request sent to it. Browser internals (cookies, origins, open redirectors) are not modelled, and neither is an attacker that can read the victim's authorization request URL.
+- **Superseded version (13 Nov):** the first `NO_STATE` result had `state` public in every variant and no session-integrity lemma, so it only showed that P2/P3 never relied on `state`. That result is replaced by this one.
+- **Is it new?** No. It matches OAuth 2.1 / RFC 9700 §4.7 (PKCE can take over `state`'s CSRF role) and §4.5 (code injection). The model gives machine-checked evidence for it in MCP's setting.
 
 ### Model 03 summary: one rule that binds a client to its AS
 With both client types modelled together, the fixed variant verifies every property once **all** of the following hold:
@@ -115,22 +109,22 @@ With both client types modelled together, the fixed variant verifies every prope
 The variant table shows which checks are needed for which client. For a **public** client, removing any one of 1–3 breaks P3. For a **confidential** client, checks 2 and 5 back each other up, so only removing both breaks P3. Check 1 is needed for both client types (R8). This is a modelling result about the spec, not about any implementation.
 
 ### R6 (14 Nov 2026): with `private_key_jwt`, the assertion audience stops AS mix-up even without `iss`
-- **Model + lemmas:** 03, confidential client. `-D=NO_ISS`: P3 and P4 verified. `-D=NO_ISS -D=AS_NO_ASSERTION_AUD`: P3 falsified (13 steps), P4 falsified (11 steps).
+- **Model + lemmas:** 03, confidential client. `-D=NO_ISS`: P3 and P4 verified. `-D=NO_ISS -D=AS_NO_ASSERTION_AUD`: P3 falsified (15 steps), P4 falsified (12 steps).
 - **What the model shows:** in the R2 mix-up, the client sends the code, the PKCE verifier **and a client assertion** to the attacker's AS. The assertion's `aud` is the attacker AS's issuer, so the honest AS rejects it when the attacker replays it. Mix-up only succeeds if the client skips `iss` **and** the honest AS does not check the assertion audience. Public clients have no assertion, so for them `iss` is the only defence (public `NO_ISS`: falsified in 8 steps, as in R2).
 - **Why this is CIMD-specific:** with a CIMD client, the same `client_id` and signing key are used at every AS, including one an untrusted MCP server names. Assertions signed for an attacker-run AS are therefore valid signatures that could be replayed anywhere, and the audience check is what makes them useless elsewhere.
 - **Is it new?** No. It is the setting of the audience-injection attacks on `private_key_jwt` (Hosseyni, Küsters, Würtele, 2025) and the fix in draft-ietf-oauth-rfc7523bis (the assertion `aud` is the AS issuer). The model shows how that fix interacts with RFC 9207 in MCP's "server picks the AS" setting.
 
 ### R7 (14 Nov 2026): refresh tokens and the AS-binding rule
-- **Model + lemmas:** 03 `-D=RT_UNBOUND`. Confidential: P4 falsified (9 steps), P3 verified. Confidential plus `AS_NO_ASSERTION_AUD`: P3 falsified (10 steps). Public: P3 and P4 falsified (8 steps each).
+- **Model + lemmas:** 03 `-D=RT_UNBOUND`. Confidential: P4 falsified (9 steps), P3 verified. Confidential plus `AS_NO_ASSERTION_AUD`: attack trace for P3 (12 steps; stated as `token_secrecy_attack`). Public: P3 and P4 falsified (8 steps each).
 - **What the spec says:** "Clients that use pre-registered credentials, or persist client credentials obtained via Dynamic Client Registration, **MUST** associate those credentials with the specific authorization server that issued them, keyed by the authorization server's `issuer` identifier." (Client Registration, Authorization Server Binding.) The rule names client credentials; refresh tokens are not mentioned. CIMD client IDs are described as "portable across authorization servers".
 - **What the model shows:** a client that sends its stored refresh token to whatever AS the current MCP server names leaks it to an attacker-run AS. For a public client that alone gives the attacker access tokens for the honest MCP server. For a confidential client the leaked refresh token is useless on its own, because the honest AS also requires a client assertion addressed to it.
 - **Is it new?** No. Not sending a token to the wrong issuer is standard OAuth practice, and the 2026 SDK advisories on credential binding are of the same family. The open question is spec wording: should the AS-binding rule name refresh tokens explicitly (spec gap G3)?
 
 ### R8 (14 Nov 2026): an unvalidated metadata `issuer` defeats `iss` and the assertion audience at once
-- **Model + lemmas:** 03 `-D=NO_META_CHECK`. Public: P3 and P4 falsified (8 steps each). Confidential: attack traces for P3 (14 steps) and P4 (9 steps).
+- **Model + lemmas:** 03 `-D=NO_META_CHECK`. Public: P3 and P4 falsified (8 steps each). Confidential: attack traces for P3 (16 steps) and P4 (9 steps).
 - **What the spec says:** the client "**MUST** record the `issuer` value from the selected authorization server's validated metadata document … it provides no protection if the expected issuer was obtained from an unvalidated source." (Authorization Response Validation.)
 - **What the model shows:** an attacker-run AS publishes metadata whose `issuer` is the honest AS's issuer. A client that records it without the RFC 8414 §3.3 check accepts the honest AS's `iss` while talking to the attacker's endpoints, and (confidential clients) signs its assertions with `aud` = the honest AS. Both defences from R6 then fail together. The refresh-token trace (9 steps) is exactly this: the client refreshes at the attacker's AS, which claims the honest issuer, and leaks the refresh token and an assertion valid at the honest AS.
-- **Termination:** for the confidential client the all-traces P3/P4 lemmas did not terminate (10 min each, several heuristics tried). That variant instead states the attacks as `exists-trace` lemmas: `refresh_token_secrecy_attack` (9 steps) and `token_secrecy_attack` (14 steps; it asks for the stolen token to come from a refresh, which narrows the search; the search takes about 11 minutes locally). A found trace is a counterexample to the all-traces lemma, so the result is the same; only the proof style differs.
+- **Termination:** for the confidential client the all-traces P3/P4 lemmas did not terminate (several heuristics tried). That variant, and confidential `RT_UNBOUND` + `AS_NO_ASSERTION_AUD` once the attacker has its own clients, instead state the attacks as `exists-trace` lemmas: `refresh_token_secrecy_attack` and `token_secrecy_attack` (it asks for the stolen token to come from a refresh, which narrows the search; for `NO_META_CHECK` the search takes about 20 minutes locally). A found trace is a counterexample to the all-traces lemma, so the result is the same; only the proof style differs.
 - **Is it new?** No. The spec already warns about it, and RFC 8414 §3.3 exists for this reason. The model gives a machine-checked trace for the warning.
 
 ### R9 (14 Nov 2026): ID-JAG: either RAS check alone stops cross-RAS replay
@@ -148,4 +142,6 @@ The variant table shows which checks are needed for which client. For a **public
 
 ## Modelling notes
 
-- Model 02 needs two `[sources]` lemmas (`code_sources`, `token_sources`), plus tagged codes and tokens (`cd(...)`, `at(...)`). Without them Tamarin loops on "attacker injects a value into the client → client leaks it to a dishonest AS → attacker knows it". The tags have no destructor, so Tamarin's derivation check warns that `code` / `~code` are "not derivable" in the callback and token rules. That warning is expected: those rules deliberately pattern-match on an opaque handle.
+- Models 02 and 03 need `[sources]` lemmas (`code_sources`, `token_sources`, `rt_sources`), plus tagged codes and tokens (`cd(...)`, `at(...)`, `rt(...)`). Without them Tamarin loops on "attacker injects a value into the client → client leaks it to a dishonest AS → attacker knows it".
+- The tags have public destructors (`uncd`, `unat`, `unrt`), and client assertions are checked with `verify` rather than by pattern-matching on the signing key. As a result every model passes all well-formedness checks, including the full message-derivation check. `scripts/prove.sh` runs with `--derivcheck-timeout=0` and fails on any warning.
+- Lemma counts: `scripts/prove.sh` prints how many checked results are security properties and how many are helper or sanity lemmas (`[sources]`, `executable*`, `client_key_secret`, `code_single_use`). Quote the security-property number, not the total.

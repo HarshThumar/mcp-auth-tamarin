@@ -44,12 +44,13 @@ This document provides the Domain-Driven Design (DDD) traceability matrix betwee
 | Step # | Protocol Action | RFC / Spec | Exact Tamarin Rule | State Preconditions & Effects |
 |---|---|---|---|---|
 | S2.1 | Setup AS & RS authorities | RFC 9728, RFC 8414 | `Setup_Honest_AS_Iss`, `Setup_Dishonest_AS_Iss`, `Setup_Dishonest_AS_NoIss`, `Setup_Honest_RS`, `Setup_Dishonest_RS` | Configures honest/dishonest servers and PRM metadata. Under `ISS_OPTIONAL`, honest AS uses `Setup_Honest_AS_NoIss`. |
-| S2.2 | Client discovers tool & requests auth | RFC 7636 (PKCE), RFC 8707 | `Client_Start_Honest_RS` / `Client_Start_Dishonest_RS` | Generates verifier `~ver`, state `~state`, session `~sid`; emits public `authz_request` with PKCE challenge `h(~ver)`. Under `NO_STATE`, uses public constant `'no_state'` instead of `~state`. |
-| S2.3 | AS authorizes & returns code | RFC 9207, OAuth 2.1 | `AS_Authorize_Iss` / `AS_Authorize_NoIss` | Emits `Consent($U, $C, $RS, $AS)` and `cd(~code)`. Under `NO_RESOURCE`, binds code to `'any'` instead of `$RS`. |
-| S2.4 | Attacker intercepts or injects callback | Dolev-Yao | `Attacker_Callback_Iss` / `Attacker_Callback_NoIss` | Attacker forwards callback to client's redirect URI (matching `state` as fresh or constant). |
-| S2.5 | Client validates callback & requests token | RFC 9207 §2.4, RFC 8707 §2 | `Client_Callback_Iss` / `Client_Callback_NoIss` | Under fixed variant: compares callback issuer with expected `$AS`. Under `NO_ISS`: ignores issuer. Sends `token_request` with `~ver` over TLS `ToAS`. |
-| S2.6 | AS validates PKCE & issues token | RFC 8707 §2, OAuth 2.1 | `AS_Token` / `AS_Token_From_Network` | Checks `h(~ver)` matches code; mints `at(~tok)` with audience `$RS`. Under `NO_RESOURCE`: mints token with audience `$AnyRS`, an honest RS chosen freely (broad audience). |
-| S2.7 | Dishonest AS intercepts requests | Threat model | `Dishonest_AS_Leaks`, `Dishonest_AS_Answers` | Leaks incoming token requests; answers on behalf of the attacker AS. |
+| S2.1b | Clients and users | Threat model | `Setup_Honest_Client`, `Setup_Dishonest_Client`, `Setup_Dishonest_User` | Honest public clients, attacker-run clients, and attacker-controlled user accounts. |
+| S2.2 | Client discovers tool & requests auth | RFC 7636 (PKCE), RFC 8707 | `Client_Start_Honest_RS` / `Client_Start_Dishonest_RS` | Session `~sid` of user `$U`: generates verifier `~ver` and state `~state`; sends `authz_request` with PKCE challenge `h(~ver)` through the user's browser (private fact `Browser($AS, $U, ...)`). Under `NO_STATE`, uses public constant `'no_state'` instead of `~state`. |
+| S2.3 | AS authorizes & returns code | RFC 9207, OAuth 2.1 | `AS_Authorize_Iss` / `AS_Authorize_NoIss` (user's own request); `AS_Authorize_Iss_Net` / `AS_Authorize_NoIss_Net` (attacker-built request, some honest user approves); `AS_Authorize_Dishonest_User`, `AS_Authorize_Dishonest_Client` (code goes to the attacker) | Emits `Consent($U, $C, $RS, $AS)` and `cd(~code)`; stores the linear (single-use) fact `Code(...)` with the challenge and requested `$RS`. |
+| S2.4 | Attacker intercepts or injects callback | Dolev-Yao | `Attacker_Callback_Iss` / `Attacker_Callback_NoIss` | Attacker sends any callback to the client's redirect URI (CSRF / code injection; it must know the session's `state`). |
+| S2.5 | Client validates callback & requests token | RFC 9207 §2.4, RFC 8707 §2 | `Client_Callback_Iss` / `Client_Callback_NoIss` | Matches `state`. Under fixed variant: compares callback issuer with expected `$AS`. Under `NO_ISS`: ignores issuer. Sends `token_request` with `~ver` over TLS `ToAS`. |
+| S2.6 | AS validates PKCE & issues token | RFC 7636, RFC 8707 §2, OAuth 2.1 | `AS_Token` / `AS_Token_From_Network` | Consumes the code; restriction `pkce_checked` (`PkceCheck(challenge, h(ver))`, removed by `NO_PKCE`); mints `at(~tok)` with audience `$RS`. Under `NO_RESOURCE`: mints token with audience `$AnyRS`, an honest RS chosen freely (broad audience). |
+| S2.7 | Dishonest AS intercepts requests | Threat model | `Dishonest_AS_Leaks_Authz`, `Dishonest_AS_Leaks`, `Dishonest_AS_Answers` | Leaks incoming authorization and token requests; answers on behalf of the attacker AS. |
 | S2.8 | Client uses token at MCP tool | MCP Auth Spec §Token Handling | `Client_Use_Token` | Sends `at(tok)` as Bearer token over TLS channel `ToRS`. |
 | S2.9 | Attacker presents token to RS | Dolev-Yao | `Attacker_To_RS` | Injects any token known to the network into an honest RS. |
 | S2.10 | RS validates audience & executes tool | RFC 8707 §2 | `RS_Accepts` | Fixed variant checks `!Token(at(~tok), $AS, $U, $RS)`. Under `NO_AUD`, accepts any audience `aud`. Under `NO_RESOURCE`, the fixed audience check still runs, and passes because the AS stamped this honest RS as the audience (`$AnyRS`). |
@@ -90,7 +91,7 @@ lemma code_sources [sources]:
 lemma token_sources [sources]:
   "All sid c rs tok #i.
      ClientUsesToken(sid, c, rs, tok) @ #i
-     ==> (Ex as u aud #j. TokenIssued(tok, as, u, aud) @ #j & #j < #i)
+     ==> (Ex as u c2 aud #j. TokenIssued(tok, as, u, c2, aud) @ #j & #j < #i)
        | (Ex #j. KU(tok) @ #j & #j < #i)"
 
 // Executability sanity check: an honest client reaches an honest MCP server.
@@ -106,10 +107,27 @@ lemma rs_accepts_only_consented:
      RSAccepts(rs, u, aud, t) @ #i
      ==> Ex c as #j. Consent(u, c, rs, as) @ #j"
 
-// Token Secrecy (P3): tokens minted for an honest MCP server are never learned by the attacker.
+// Token Secrecy (P3): tokens minted for an honest user and honest client, for an
+// honest MCP server, are never learned by the attacker.
 lemma token_secrecy:
-  "All t as u rs #i.
-     TokenIssued(t, as, u, rs) @ #i
+  "All t as u c rs #i.
+     TokenIssued(t, as, u, c, rs) @ #i
      & not (Ex #j. RS_Dishonest(rs) @ #j)
+     & not (Ex #j. Client_Dishonest(c) @ #j)
+     & not (Ex #j. User_Dishonest(u) @ #j)
      ==> not (Ex #k. K(t) @ #k)"
+
+// Session integrity (P6): an honest user's session with an honest AS ends with
+// a token that AS issued for that user and that client.
+lemma session_integrity:
+  "All sid c u rs as t #s #i.
+     ClientStart(sid, c, u, rs, as) @ #s
+     & ClientUsesToken(sid, c, rs, t) @ #i
+     & not (Ex #j. User_Dishonest(u) @ #j)
+     & not (Ex #j. AS_Dishonest(as) @ #j)
+     ==> Ex rs2 #j. TokenIssued(t, as, u, c, rs2) @ #j"
+
+// Sanity: each code is redeemed at most once.
+lemma code_single_use:
+  "All c #i #j. CodeUsed(c) @ #i & CodeUsed(c) @ #j ==> #i = #j"
 ```

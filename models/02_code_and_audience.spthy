@@ -4,9 +4,12 @@ begin
 builtins: hashing
 
 // Codes and access tokens are tagged so that Tamarin never confuses them
-// with PKCE verifiers or other fresh values. No destructors: the attacker
-// cannot unwrap them, but can build cd(x) / at(x) from values it knows.
-functions: cd/1, at/1
+// with PKCE verifiers or other fresh values. The tags carry a public
+// destructor (uncd / unat): the attacker can unwrap and rebuild them, so a
+// tag hides nothing, and every rule variable stays derivable (no
+// wellformedness warnings).
+functions: cd/1, at/1, uncd/1, unat/1
+equations: uncd(cd(x)) = x, unat(at(x)) = x
 
 /*
  * Model 02: does an authorization code / access token only reach the
@@ -25,8 +28,12 @@ functions: cd/1, at/1
  * Properties (docs/flow.md)
  *   P2 rs_accepts_only_consented: an honest MCP server only accepts a token
  *      for user U if U consented to a token for THAT server.
- *   P3 token_secrecy: an access token issued by an honest AS for an honest
- *      MCP server never reaches the attacker (covers mix-up).
+ *   P3 token_secrecy: an access token issued by an honest AS to an honest
+ *      client for an honest MCP server never reaches the attacker (covers
+ *      mix-up).
+ *   P6 session_integrity: if an honest user's client session with an honest
+ *      AS ends with a token, that token was issued by that AS for that user
+ *      and that client (no code injection / login CSRF).
  *
  * Variants (Tamarin preprocessor flags; scripts/prove.sh runs all six)
  *   -D=NO_AUD        the MCP server does not check the token audience.
@@ -49,15 +56,23 @@ functions: cd/1, at/1
  *                    expected: P2 FALSIFIED, P3 verified
  *   -D=NO_STATE      the client does not generate a unique state per session;
  *                    uses a fixed public constant ('no_state') (Spec gap G7).
- *                    expected: P2 verified, P3 verified
+ *                    expected: all verified (PKCE alone keeps P6)
+ *   -D=NO_PKCE       the AS does not check the PKCE verifier.
+ *                    expected: all verified (state alone keeps P6)
+ *   -D=NO_PKCE -D=NO_STATE
+ *                    expected: P6 FALSIFIED (code injection / login CSRF)
  *   (no flag)        honest ASes always send `iss`, the client always checks
  *                    it, the MCP server checks the audience.
  *                    expected: P2 verified, P3 verified
  *
  * Abstraction (see docs/threat-model.md)
- *   - Dolev-Yao network. Front-channel messages (authorization request URLs)
- *     are public. The attacker can send any authorization request to an
- *     honest AS and any callback to the client's redirect URI.
+ *   - Dolev-Yao network. An honest user's browser reaches the AS over HTTPS
+ *     (private fact Browser): `state` and the PKCE challenge of an honest
+ *     user's session are not visible to the network, but an attacker-run AS
+ *     receives (leaks) every request sent to it. The attacker can also send
+ *     any authorization request to an honest AS (a victim's browser it
+ *     redirects; some honest user approves) and any callback to the client's
+ *     redirect URI (CSRF).
  *   - TLS to a named endpoint = private linear fact (ToAS / FromAS / ToRS /
  *     ToClient). A dishonest endpoint leaks what it receives.
  *   - Each AS and each MCP server is set up exactly once, as honest or as
@@ -65,12 +80,16 @@ functions: cd/1, at/1
  *     protected resource metadata. A dishonest MCP server names any AS.
  *   - Every honest MCP server accepts tokens from every honest AS
  *     (worst case: one shared AS, as in the advisories above).
- *   - Users: "some honest user approves" any authorization request for an
- *     honest client (the usual mix-up assumption: the user is already
- *     signed in at the honest AS). All clients are honest public clients
- *     (no client secret; CIMD-style).
- *   - Left out: refresh tokens, scopes/step-up, code single-use, DPoP,
- *     expiry, the browser itself.
+ *   - Users: each client session belongs to one user. Attacker-controlled
+ *     users ($Ua, User_Dishonest) get real codes for their own accounts,
+ *     delivered to the attacker's browser, for any client.
+ *   - Clients: honest public clients, plus attacker-run clients ($E) that
+ *     obtain real codes and tokens (for users who consent to them) at
+ *     honest ASes. P3 is stated for honest clients only.
+ *   - Codes are single-use: the code record is consumed at the token
+ *     endpoint (lemma code_single_use).
+ *   - Left out: refresh tokens, scopes/step-up, DPoP, expiry, browser
+ *     internals (cookies, redirects, origins).
  */
 
 /* ------------------------------------------------------------------ */
@@ -115,6 +134,34 @@ rule Setup_Dishonest_RS:
   --[ RSSetup($X), RS_Dishonest($X) ]->
     [ !DishonestRS($X) ]
 
+// Honest client (public client, CIMD-style).
+rule Setup_Honest_Client:
+    [ ]
+  --[ ClientSetup($C), Client_Honest($C) ]->
+    [ !HonestClient($C) ]
+
+// Attacker-run client: its redirect URI is the attacker's.
+rule Setup_Dishonest_Client:
+    [ ]
+  --[ ClientSetup($E), Client_Dishonest($E) ]->
+    [ !DishonestClient($E) ]
+
+// The attacker controls some user accounts.
+rule Setup_Dishonest_User:
+    [ ]
+  --[ User_Dishonest($Ua) ]->
+    [ !DishonestUser($Ua) ]
+
+#ifdef NO_PKCE
+#else
+// The token endpoint checks the PKCE verifier against the stored challenge.
+restriction pkce_checked:
+  "All x y #t. PkceCheck(x, y) @ #t ==> x = y"
+#endif
+
+restriction client_set_up_once:
+  "All x #i #j. ClientSetup(x) @ #i & ClientSetup(x) @ #j ==> #i = #j"
+
 restriction as_set_up_once:
   "All x #i #j. ASSetup(x) @ #i & ASSetup(x) @ #j ==> #i = #j"
 
@@ -126,88 +173,108 @@ restriction rs_set_up_once:
 /* ------------------------------------------------------------------ */
 
 #ifdef NO_STATE
+// NO_STATE (G7): the client does not generate a unique random state per
+// session; it uses the public constant 'no_state'.
+#define FIXED_STATE
+#endif
 
-// NO_STATE (G7): the client does not generate a unique random state per session;
-// it transmits a public constant ('no_state'). Note: `state` is public in every
-// variant (front channel), and CSRF / session integrity is not modelled.
+// Client (session of user $U) connects to an honest MCP server and reads its
+// authentic PRM. The authorization request goes through $U's browser.
+#ifdef FIXED_STATE
 rule Client_Start_Honest_RS:
-    [ !PRM($RS, $AS), !ASMeta($AS, issSupported)
+    [ !HonestClient($C), !PRM($RS, $AS), !ASMeta($AS, issSupported)
     , Fr(~sid), Fr(~ver) ]
-  --[ ClientStart(~sid, $C, $RS, $AS) ]->
-    [ St_Client_1(~sid, $C, $RS, $AS, issSupported, ~ver, 'no_state')
-    , Out(<'authz_request', $AS, $C, h(~ver), $RS, 'no_state'>) ]
+  --[ ClientStart(~sid, $C, $U, $RS, $AS) ]->
+    [ St_Client_1(~sid, $C, $U, $RS, $AS, issSupported, ~ver, 'no_state')
+    , Browser($AS, $U, <'authz_request', $AS, $C, h(~ver), $RS, 'no_state'>) ]
 
 rule Client_Start_Dishonest_RS:
-    [ !DishonestRS($RS), In(<'prm', $RS, $AS>), !ASMeta($AS, issSupported)
-    , Fr(~sid), Fr(~ver) ]
-  --[ ClientStart(~sid, $C, $RS, $AS) ]->
-    [ St_Client_1(~sid, $C, $RS, $AS, issSupported, ~ver, 'no_state')
-    , Out(<'authz_request', $AS, $C, h(~ver), $RS, 'no_state'>) ]
-
+    [ !HonestClient($C), !DishonestRS($RS), In(<'prm', $RS, $AS>)
+    , !ASMeta($AS, issSupported), Fr(~sid), Fr(~ver) ]
+  --[ ClientStart(~sid, $C, $U, $RS, $AS) ]->
+    [ St_Client_1(~sid, $C, $U, $RS, $AS, issSupported, ~ver, 'no_state')
+    , Browser($AS, $U, <'authz_request', $AS, $C, h(~ver), $RS, 'no_state'>) ]
 #else
-
-// Client connects to an honest MCP server and reads its (authentic) PRM.
 rule Client_Start_Honest_RS:
-    [ !PRM($RS, $AS), !ASMeta($AS, issSupported)
+    [ !HonestClient($C), !PRM($RS, $AS), !ASMeta($AS, issSupported)
     , Fr(~sid), Fr(~ver), Fr(~state) ]
-  --[ ClientStart(~sid, $C, $RS, $AS) ]->
-    [ St_Client_1(~sid, $C, $RS, $AS, issSupported, ~ver, ~state)
-    , Out(<'authz_request', $AS, $C, h(~ver), $RS, ~state>) ]
+  --[ ClientStart(~sid, $C, $U, $RS, $AS) ]->
+    [ St_Client_1(~sid, $C, $U, $RS, $AS, issSupported, ~ver, ~state)
+    , Browser($AS, $U, <'authz_request', $AS, $C, h(~ver), $RS, ~state>) ]
 
 // Client connects to a malicious MCP server, which names any AS it likes.
 rule Client_Start_Dishonest_RS:
-    [ !DishonestRS($RS), In(<'prm', $RS, $AS>), !ASMeta($AS, issSupported)
-    , Fr(~sid), Fr(~ver), Fr(~state) ]
-  --[ ClientStart(~sid, $C, $RS, $AS) ]->
-    [ St_Client_1(~sid, $C, $RS, $AS, issSupported, ~ver, ~state)
-    , Out(<'authz_request', $AS, $C, h(~ver), $RS, ~state>) ]
-
+    [ !HonestClient($C), !DishonestRS($RS), In(<'prm', $RS, $AS>)
+    , !ASMeta($AS, issSupported), Fr(~sid), Fr(~ver), Fr(~state) ]
+  --[ ClientStart(~sid, $C, $U, $RS, $AS) ]->
+    [ St_Client_1(~sid, $C, $U, $RS, $AS, issSupported, ~ver, ~state)
+    , Browser($AS, $U, <'authz_request', $AS, $C, h(~ver), $RS, ~state>) ]
 #endif
+
+// An attacker-run AS sees the whole authorization request.
+rule Dishonest_AS_Leaks_Authz:
+    [ Browser($X, $U, m), !DishonestAS($X) ]
+  --[ LeakedAuthz($X) ]->
+    [ Out(m) ]
 
 /* ------------------------------------------------------------------ */
 /* Honest AS: authorization endpoint                                  */
 /* ------------------------------------------------------------------ */
 
-// The request arrives through the browser, so the attacker can shape it.
-// Some honest user U approves it. The code goes to the client's redirect URI.
-#ifdef NO_RESOURCE
+// Codes always record the requested resource; under NO_RESOURCE the token
+// endpoint ignores it.
 
-// NO_RESOURCE: AS ignores the requested resource parameter in the authorization
-// request and records the code without resource binding ('any').
+// The user's own request, from the client's session.
 rule AS_Authorize_Iss:
-    [ In(<'authz_request', $AS, $C, challenge, $RS, state>)
-    , !HonestAS($AS), !ASMeta($AS, 'true'), Fr(~code) ]
+    [ Browser($AS, $U, <'authz_request', $AS, $C, challenge, $RS, state>)
+    , !HonestAS($AS), !ASMeta($AS, 'true'), !HonestClient($C), Fr(~code) ]
   --[ Consent($U, $C, $RS, $AS), CodeIssued(cd(~code)) ]->
-    [ !Code($AS, cd(~code), $U, $C, challenge, 'any')
+    [ Code($AS, cd(~code), $U, $C, challenge, $RS)
     , ToClient($C, <'authz_response', cd(~code), state, $AS>) ]
 
 rule AS_Authorize_NoIss:
-    [ In(<'authz_request', $AS, $C, challenge, $RS, state>)
-    , !HonestAS($AS), !ASMeta($AS, 'false'), Fr(~code) ]
+    [ Browser($AS, $U, <'authz_request', $AS, $C, challenge, $RS, state>)
+    , !HonestAS($AS), !ASMeta($AS, 'false'), !HonestClient($C), Fr(~code) ]
   --[ Consent($U, $C, $RS, $AS), CodeIssued(cd(~code)) ]->
-    [ !Code($AS, cd(~code), $U, $C, challenge, 'any')
+    [ Code($AS, cd(~code), $U, $C, challenge, $RS)
     , ToClient($C, <'authz_response_noiss', cd(~code), state>) ]
 
-#else
-
-rule AS_Authorize_Iss:
+// A request the attacker built (e.g. the victim's browser redirected by an
+// attacker-run AS, as in mix-up): some honest user $U approves it.
+rule AS_Authorize_Iss_Net:
     [ In(<'authz_request', $AS, $C, challenge, $RS, state>)
-    , !HonestAS($AS), !ASMeta($AS, 'true'), Fr(~code) ]
+    , !HonestAS($AS), !ASMeta($AS, 'true'), !HonestClient($C), Fr(~code) ]
   --[ Consent($U, $C, $RS, $AS), CodeIssued(cd(~code)) ]->
-    [ !Code($AS, cd(~code), $U, $C, challenge, $RS)
+    [ Code($AS, cd(~code), $U, $C, challenge, $RS)
     , ToClient($C, <'authz_response', cd(~code), state, $AS>) ]
 
-rule AS_Authorize_NoIss:
+rule AS_Authorize_NoIss_Net:
     [ In(<'authz_request', $AS, $C, challenge, $RS, state>)
-    , !HonestAS($AS), !ASMeta($AS, 'false'), Fr(~code) ]
+    , !HonestAS($AS), !ASMeta($AS, 'false'), !HonestClient($C), Fr(~code) ]
   --[ Consent($U, $C, $RS, $AS), CodeIssued(cd(~code)) ]->
-    [ !Code($AS, cd(~code), $U, $C, challenge, $RS)
+    [ Code($AS, cd(~code), $U, $C, challenge, $RS)
     , ToClient($C, <'authz_response_noiss', cd(~code), state>) ]
 
-#endif
+// An attacker-controlled user authorizes any client in the attacker's own
+// browser: the code lands in the attacker's hands.
+rule AS_Authorize_Dishonest_User:
+    [ In(<'authz_request', $AS, $C, challenge, $RS, state, $Ua>)
+    , !HonestAS($AS), !DishonestUser($Ua), Fr(~code) ]
+  --[ Consent($Ua, $C, $RS, $AS), CodeIssued(cd(~code)) ]->
+    [ Code($AS, cd(~code), $Ua, $C, challenge, $RS)
+    , Out(<'authz_response', cd(~code), state, $AS>) ]
+
+// Authorization for an attacker-run client: some user consents, and the code
+// goes to the attacker's redirect URI (the network).
+rule AS_Authorize_Dishonest_Client:
+    [ In(<'authz_request', $AS, $E, challenge, $RS, state>)
+    , !HonestAS($AS), !DishonestClient($E), Fr(~code) ]
+  --[ Consent($U, $E, $RS, $AS), CodeIssued(cd(~code)) ]->
+    [ Code($AS, cd(~code), $U, $E, challenge, $RS)
+    , Out(<'authz_response', cd(~code), state, $AS>) ]
 
 // The attacker can also send any callback to the client's redirect URI
-// (e.g. what its own AS "returns").
+// (e.g. what its own AS "returns", or a CSRF'd callback).
 rule Attacker_Callback_Iss:
     [ In(<'authz_response', cd(code), state, $iss>) ]
   -->
@@ -226,7 +293,7 @@ rule Attacker_Callback_NoIss:
 
 // NO_ISS: whatever `iss` says, the code goes to the AS this session started with.
 rule Client_Callback_Iss:
-    [ St_Client_1(~sid, $C, $RS, $AS, issSupported, ~ver, state)
+    [ St_Client_1(~sid, $C, $U, $RS, $AS, issSupported, ~ver, state)
     , ToClient($C, <'authz_response', cd(code), state, $iss>) ]
   --[ ClientRedeems(~sid, $C, $AS, cd(code)) ]->
     [ St_Client_2(~sid, $C, $RS, $AS)
@@ -236,7 +303,7 @@ rule Client_Callback_Iss:
 
 // `iss` present: compare with the recorded issuer (rows 1 and 3 of the table).
 rule Client_Callback_Iss:
-    [ St_Client_1(~sid, $C, $RS, $AS, issSupported, ~ver, state)
+    [ St_Client_1(~sid, $C, $U, $RS, $AS, issSupported, ~ver, state)
     , ToClient($C, <'authz_response', cd(code), state, $AS>) ]
   --[ ClientRedeems(~sid, $C, $AS, cd(code)) ]->
     [ St_Client_2(~sid, $C, $RS, $AS)
@@ -247,7 +314,7 @@ rule Client_Callback_Iss:
 // `iss` absent: proceed only if the recorded metadata does not advertise
 // `iss` support (row 4). Row 2 (advertised but absent) has no rule: reject.
 rule Client_Callback_NoIss:
-    [ St_Client_1(~sid, $C, $RS, $AS, 'false', ~ver, state)
+    [ St_Client_1(~sid, $C, $U, $RS, $AS, 'false', ~ver, state)
     , ToClient($C, <'authz_response_noiss', cd(code), state>) ]
   --[ ClientRedeems(~sid, $C, $AS, cd(code)) ]->
     [ St_Client_2(~sid, $C, $RS, $AS)
@@ -264,18 +331,20 @@ rule Client_Callback_NoIss:
 rule AS_Token:
     [ ToAS($AS, ~sid, <'token_request', $C, cd(~code), ~ver, $RS>)
     , !HonestAS($AS), !HonestRS($AnyRS)
-    , !Code($AS, cd(~code), $U, $C, h(~ver), code_aud)
+    , Code($AS, cd(~code), $U, $C, chal, code_aud)
     , Fr(~tok) ]
-  --[ TokenIssued(at(~tok), $AS, $U, $RS) ]->
+  --[ PkceCheck(chal, h(~ver))
+    , TokenIssued(at(~tok), $AS, $U, $C, $RS), CodeUsed(cd(~code)) ]->
     [ !Token(at(~tok), $AS, $U, $AnyRS)
     , FromAS(~sid, <'token_response', at(~tok)>) ]
 
 rule AS_Token_From_Network:
     [ In(<'token_request', $C, cd(~code), ver, $RS>)
     , !HonestAS($AS), !HonestRS($AnyRS)
-    , !Code($AS, cd(~code), $U, $C, h(ver), code_aud)
+    , Code($AS, cd(~code), $U, $C, chal, code_aud)
     , Fr(~tok) ]
-  --[ TokenIssued(at(~tok), $AS, $U, $RS) ]->
+  --[ PkceCheck(chal, h(ver))
+    , TokenIssued(at(~tok), $AS, $U, $C, $RS), CodeUsed(cd(~code)) ]->
     [ !Token(at(~tok), $AS, $U, $AnyRS)
     , Out(at(~tok)) ]
 
@@ -285,9 +354,10 @@ rule AS_Token_From_Network:
 rule AS_Token:
     [ ToAS($AS, ~sid, <'token_request', $C, cd(~code), ~ver, $RS>)
     , !HonestAS($AS)
-    , !Code($AS, cd(~code), $U, $C, h(~ver), $RS)
+    , Code($AS, cd(~code), $U, $C, chal, $RS)
     , Fr(~tok) ]
-  --[ TokenIssued(at(~tok), $AS, $U, $RS) ]->
+  --[ PkceCheck(chal, h(~ver))
+    , TokenIssued(at(~tok), $AS, $U, $C, $RS), CodeUsed(cd(~code)) ]->
     [ !Token(at(~tok), $AS, $U, $RS)
     , FromAS(~sid, <'token_response', at(~tok)>) ]
 
@@ -296,9 +366,10 @@ rule AS_Token:
 rule AS_Token_From_Network:
     [ In(<'token_request', $C, cd(~code), ver, $RS>)
     , !HonestAS($AS)
-    , !Code($AS, cd(~code), $U, $C, h(ver), $RS)
+    , Code($AS, cd(~code), $U, $C, chal, $RS)
     , Fr(~tok) ]
-  --[ TokenIssued(at(~tok), $AS, $U, $RS) ]->
+  --[ PkceCheck(chal, h(ver))
+    , TokenIssued(at(~tok), $AS, $U, $C, $RS), CodeUsed(cd(~code)) ]->
     [ !Token(at(~tok), $AS, $U, $RS)
     , Out(at(~tok)) ]
 
@@ -373,7 +444,7 @@ lemma code_sources [sources]:
 lemma token_sources [sources]:
   "All sid c rs tok #i.
      ClientUsesToken(sid, c, rs, tok) @ #i
-     ==> (Ex as u aud #j. TokenIssued(tok, as, u, aud) @ #j & #j < #i)
+     ==> (Ex as u c2 aud #j. TokenIssued(tok, as, u, c2, aud) @ #j & #j < #i)
        | (Ex #j. KU(tok) @ #j & #j < #i)"
 
 // Sanity: a fully honest run reaches an honest MCP server.
@@ -390,11 +461,32 @@ lemma rs_accepts_only_consented:
      RSAccepts(rs, u, aud, t) @ #i
      ==> Ex c as #j. Consent(u, c, rs, as) @ #j"
 
-// P3: a token from an honest AS for an honest MCP server stays secret.
+// P3: a token from an honest AS, issued for an honest user to an honest
+// client for an honest MCP server, stays secret. (Tokens of attacker-run
+// clients and of attacker-controlled users are known to the attacker by
+// design: a public client has no secret, so the attacker can use its
+// client_id for its own account.)
 lemma token_secrecy:
-  "All t as u rs #i.
-     TokenIssued(t, as, u, rs) @ #i
+  "All t as u c rs #i.
+     TokenIssued(t, as, u, c, rs) @ #i
      & not (Ex #j. RS_Dishonest(rs) @ #j)
+     & not (Ex #j. Client_Dishonest(c) @ #j)
+     & not (Ex #j. User_Dishonest(u) @ #j)
      ==> not (Ex #k. K(t) @ #k)"
+
+// P6: session integrity. If an honest user's client session with an honest
+// AS ends with a token, the token was issued by that AS, for that user and
+// that client. Fails under code injection / login CSRF.
+lemma session_integrity:
+  "All sid c u rs as t #s #i.
+     ClientStart(sid, c, u, rs, as) @ #s
+     & ClientUsesToken(sid, c, rs, t) @ #i
+     & not (Ex #j. User_Dishonest(u) @ #j)
+     & not (Ex #j. AS_Dishonest(as) @ #j)
+     ==> Ex rs2 #j. TokenIssued(t, as, u, c, rs2) @ #j"
+
+// Codes are single-use: an honest AS redeems each code at most once.
+lemma code_single_use:
+  "All c #i #j. CodeUsed(c) @ #i & CodeUsed(c) @ #j ==> #i = #j"
 
 end
