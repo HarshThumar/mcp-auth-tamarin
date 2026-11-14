@@ -41,6 +41,7 @@
 - **Partly covered** by the audience-injection work and rfc7523bis. They establish that the assertion `aud` must be the validated issuer, and that fix is the check R6 relies on.
 - We couldn't find prior work that states or machine-checks R6 itself: that the `aud` check can replace `iss` against mix-up, for a CIMD client using one key at many ASes.
 - The S&P 2026 PDF was not read and may discuss this.
+- The BCP update (§2.1, §2.2.2) treats audience injection and mix-up as separate problems. It still lists RFC 9207 `iss` (or an issuer in the redirect URI) as a condition for mix-up protection and does not offer the assertion `aud` as a substitute. R6 should therefore be read as "in this model, for confidential clients, the two defences overlap", not as advice to skip `iss`.
 
 **R8: an unvalidated metadata `issuer` defeats both `iss` and the assertion `aud` at once.**
 - **Partly covered** by the audience-injection work and the BCP update. They identify the root cause (trusting unvalidated metadata) and the fix (validate the issuer per RFC 8414 §3.3).
