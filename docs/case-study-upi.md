@@ -1,6 +1,7 @@
 # Case study: an AI agent that pays under a UPI-style mandate
 
 *Model 05, [`models/05_agent_payment_mandate.spthy`](../models/05_agent_payment_mandate.spthy). Checked 14 Nov 2026 with Tamarin 1.12.0. Results R13 in [results.md](results.md). Every combination of removed checks is in [ablation.md](ablation.md).*
+*Companion overview: [engineering blog post](../blog/2026-11-ietf127-mcp-authorization.md) · Model → SDK verification: [implementation-check.md](implementation-check.md).*
 
 This page has three parts for three kinds of reader. Read only the part you need.
 
