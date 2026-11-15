@@ -49,7 +49,7 @@ Common fixtures: honest AS `https://as.honest.example`, another AS `https://as.o
 
 ## CT-05 Credentials are bound to the AS they were issued by
 - **Preconditions:** a credential record stamped with issuer `https://as.honest.example` (as produced by the SDK's registration flow).
-- **Expected:** the record matches the honest issuer and does not match `https://as.other.example`.
+- **Expected:** the record matches the honest issuer and does not match `https://as.other.example`; credentials stamped with another AS are refused and never presented to this authorization server.
 - **Model:** 01 `VULNERABLE`, P1 falsified (the abstraction of GHSA-qx49-fqc8-xw99).
 
 ## CT-06 `resource` indicator on both requests

@@ -4,9 +4,19 @@ In-process only: no sockets, no network, no third-party systems.
 IDs (CT-xx) are defined in conformance/spec.md.
 """
 import anyio
+from urllib.parse import parse_qs, urlparse
+import httpx2
+import jwt
 import pytest
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import serialization
 
 from mcp.client.auth.exceptions import OAuthFlowError
+from mcp.client.auth.extensions.client_credentials import (
+    PrivateKeyJWTOAuthProvider,
+    SignedJWTParameters,
+)
+from mcp.client.auth.oauth2 import AuthorizationCodeResult, OAuthClientProvider, TokenStorage
 from mcp.client.auth.utils import (
     credentials_match_issuer,
     validate_authorization_response_iss,
@@ -14,7 +24,7 @@ from mcp.client.auth.utils import (
 )
 from mcp.server.auth.middleware.bearer_auth import BearerAuthBackend
 from mcp.server.auth.provider import AccessToken
-from mcp.shared.auth import OAuthClientInformationFull, OAuthMetadata
+from mcp.shared.auth import OAuthClientInformationFull, OAuthClientMetadata, OAuthMetadata
 
 HONEST = "https://as.honest.example"
 OTHER = "https://as.other.example"
@@ -103,3 +113,175 @@ def test_ct05_stamped_credentials_match_only_their_as():
                                       redirect_uris=["http://localhost/cb"], issuer=HONEST)
     assert credentials_match_issuer(info, HONEST, None)
     assert not credentials_match_issuer(info, OTHER, None)
+
+
+# CT-06: RFC 8707 `resource` is sent on /authorize and /token, value from PRM (model 02 NO_RESOURCE; R4).
+class _MemStorage(TokenStorage):
+    def __init__(self):
+        self._tokens = None
+
+    async def get_tokens(self):
+        return self._tokens
+
+    async def set_tokens(self, tokens):
+        self._tokens = tokens
+
+
+def _run_oauth_client(prm_resource=RS):
+    requests_log = []
+    redirects = []
+    saved_state = {}
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        requests_log.append(request)
+        url = str(request.url)
+        path = request.url.path
+
+        if url.startswith(RS):
+            if "authorization" in request.headers:
+                return httpx2.Response(200, json={"ok": True})
+            return httpx2.Response(401, headers={"WWW-Authenticate": "Bearer"})
+
+        if path.startswith("/.well-known/oauth-protected-resource"):
+            return httpx2.Response(200, json={
+                "resource": prm_resource,
+                "authorization_servers": [HONEST],
+            })
+
+        if path == "/.well-known/oauth-authorization-server":
+            return httpx2.Response(200, json={
+                "issuer": HONEST,
+                "authorization_endpoint": f"{HONEST}/authorize",
+                "token_endpoint": f"{HONEST}/token",
+                "registration_endpoint": f"{HONEST}/register",
+                "response_types_supported": ["code"],
+            })
+
+        if path == "/register":
+            return httpx2.Response(201, json={
+                "client_id": "CID",
+                "redirect_uris": ["http://localhost/cb"],
+                "token_endpoint_auth_method": "none",
+            })
+
+        if path == "/token":
+            return httpx2.Response(200, json={
+                "access_token": "AT",
+                "token_type": "Bearer",
+                "expires_in": 3600,
+            })
+
+        return httpx2.Response(404)
+
+    async def redirect_handler(auth_url: str):
+        redirects.append(auth_url)
+        params = parse_qs(urlparse(auth_url).query)
+        saved_state["state"] = params.get("state", [""])[0]
+
+    async def callback_handler():
+        return AuthorizationCodeResult(code="C", state=saved_state.get("state"), iss=HONEST)
+
+    client_meta = OAuthClientMetadata(
+        client_name="test",
+        redirect_uris=["http://localhost/cb"],
+        grant_types=["authorization_code"],
+        response_types=["code"],
+    )
+
+    provider = OAuthClientProvider(
+        server_url=RS,
+        client_metadata=client_meta,
+        storage=_MemStorage(),
+        redirect_handler=redirect_handler,
+        callback_handler=callback_handler,
+    )
+
+    async def execute():
+        transport = httpx2.MockTransport(handler)
+        async with httpx2.AsyncClient(auth=provider, transport=transport) as client:
+            resp = await client.get(RS)
+            return resp, requests_log, redirects
+
+    return anyio.run(execute)
+
+
+def test_ct06_resource_sent_on_authorize_and_token():
+    resp, log, redirects = _run_oauth_client(RS)
+    assert resp.status_code == 200
+    assert len(redirects) == 1
+    auth_params = parse_qs(urlparse(redirects[0]).query)
+    assert auth_params.get("resource") == [RS]
+
+    token_req = next(r for r in log if r.url.path == "/token")
+    token_body = parse_qs(token_req.read().decode())
+    assert token_body.get("resource") == [RS]
+
+
+def test_ct06_prm_resource_mismatch_refused_before_redirect():
+    with pytest.raises(OAuthFlowError, match="does not match expected"):
+        _run_oauth_client(OTHER_RS)
+
+
+# CT-07: private_key_jwt assertion `aud` is the validated AS issuer, even if the metadata lists
+# another AS's token endpoint (model 06 AUD_TOKEN_ENDPOINT; R12).
+def test_ct07_assertion_aud_equals_metadata_issuer():
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    pem = key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode()
+
+    jwt_params = SignedJWTParameters(
+        issuer="cid",
+        subject="cid",
+        signing_key=pem,
+        signing_algorithm="RS256",
+    )
+
+    provider = PrivateKeyJWTOAuthProvider(
+        server_url=RS,
+        storage=_MemStorage(),
+        client_id="cid",
+        assertion_provider=jwt_params.create_assertion_provider(),
+        issuer=OTHER,
+    )
+    provider.context.oauth_metadata = OAuthMetadata(
+        issuer=OTHER,
+        authorization_endpoint=f"{OTHER}/authorize",
+        token_endpoint=f"{HONEST}/token",
+        response_types_supported=["code"],
+    )
+
+    token_req = anyio.run(provider._exchange_token_client_credentials)
+    assert str(token_req.url) == f"{HONEST}/token"
+
+    data = parse_qs(token_req.read().decode())
+    assertion = data["client_assertion"][0]
+    payload = jwt.decode(assertion, options={"verify_signature": False})
+    assert payload.get("aud") == OTHER
+
+
+def test_ct07_assertion_provider_receives_validated_issuer():
+    recorded_aud = []
+
+    async def assertion_provider(audience: str) -> str:
+        recorded_aud.append(audience)
+        return "fake-assertion"
+
+    provider = PrivateKeyJWTOAuthProvider(
+        server_url=RS,
+        storage=_MemStorage(),
+        client_id="cid",
+        assertion_provider=assertion_provider,
+        issuer=OTHER,
+    )
+    provider.context.oauth_metadata = OAuthMetadata(
+        issuer=OTHER,
+        authorization_endpoint=f"{OTHER}/authorize",
+        token_endpoint=f"{HONEST}/token",
+        response_types_supported=["code"],
+    )
+
+    anyio.run(provider._exchange_token_client_credentials)
+    assert recorded_aud == [OTHER]
