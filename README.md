@@ -6,7 +6,7 @@
 
 > Status: **work in progress**, started for the [IETF 127 Hackathon](https://wiki.ietf.org/en/meeting/127/hackathon) (14–15 Nov 2026, remote).
 
-**For implementers:** [MCP authorization: checks your client / server / AS must do, machine-checked](docs/implementer-checklist.md).
+**For implementers:** [MCP authorization: checks your client / server / AS must do, machine-checked](docs/implementer-checklist.md). Building agent payments? Test your own mandate validator against the proven controls with the [agent-payments conformance kit](conformance/agent-payments/).
 
 ## Why
 
@@ -30,7 +30,7 @@ Classic formal analyses of OAuth do not cover this exact setup. Real bugs show i
 | 07 | [`07_confused_deputy_proxy.spthy`](models/07_confused_deputy_proxy.spthy) | Confused deputy at an MCP proxy server with a static third-party client ID: does the proxy only issue tokens to clients the user approved? | `CONSENT_NOT_CLIENT_BOUND` / `NO_REDIRECT_CHECK` / fixed | ✅ each mitigation in the MCP Security Best Practices stops one attack; both together verified (CI) |
 | 08 | [`08_token_passthrough.spthy`](models/08_token_passthrough.spthy) | Token passthrough: can a downstream API be used for a user without the MCP server's own decision? | `S_NO_AUD` / `PASSTHROUGH` / `D_NO_AUD` / fixed | ✅ the downstream audience check is what stops it; passthrough only works when that check is off (CI) |
 | 09 | [`09_scope_step_up.spthy`](models/09_scope_step_up.spthy) | Scope step-up: can a malicious MCP server's scope challenges make an honest server accept a scope the user never approved for it? | `NO_AUD` / `NO_RESOURCE` / `CONSENT_NOT_RESOURCE_BOUND` / `UNION_ACROSS_RESOURCES` / fixed | ✅ safe with audience binding and per-resource consent (CI) |
-| 05 | [`05_agent_payment_mandate.spthy`](models/05_agent_payment_mandate.spthy) | Case study: an AI agent pays under a UPI-style mandate. Does every debit stay inside what the principal approved? | `NO_CONSENT_BINDING` / `NO_PAYEE_CHECK` / `NO_AMOUNT_CHECK` / `NO_AUD` / `NO_SENDER_CONSTRAINT` / `NO_REVOCATION_CHECK` / fixed | ✅ every check needed for exactly the property it protects (CI); see [case study](docs/case-study-upi.md) |
+| 05 | [`05_agent_payment_mandate.spthy`](models/05_agent_payment_mandate.spthy) | Case study: an AI agent pays under a UPI-style mandate. Does every debit stay inside what the principal approved? | `NO_CONSENT_BINDING` / `NO_PAYEE_CHECK` / `NO_AMOUNT_CHECK` / `NO_AUD` / `NO_SENDER_CONSTRAINT` / `NO_REVOCATION_CHECK` / fixed | ✅ every check needed for exactly the property it protects (CI); see [case study](docs/case-study-upi.md) and [conformance kit](conformance/agent-payments/) |
 
 Which checks each property needs, for every combination of removed checks: [docs/ablation.md](docs/ablation.md).
 
@@ -69,6 +69,8 @@ ONLY=01 TIMEOUT=600 JOBS=1 scripts/reproduce.sh   # quick smoke test (model 01 o
 models/        Tamarin theories (.spthy), one file per question
 scripts/       prove.sh: runs all models, compares with expected results
 docs/          flow.md (MCP auth flow), threat-model.md, results.md, spec-gaps.md, references.md, hackathon-127.md
+conformance/   agent-payments/: runnable kit to test a payment-mandate validator against Model 05's proven controls (Node, no deps)
+blog/          engineering write-up of the project
 results/       Tamarin output (generated, not committed)
 ```
 

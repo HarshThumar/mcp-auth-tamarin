@@ -2,145 +2,189 @@
 
 # Agent-Payments Mandate Conformance Kit
 
-> **Reference implementation for conformance testing only. NOT security-audited. NOT for production use. No warranty.**
+> ⚠️ **Reference implementation for conformance testing only. NOT security-audited. NOT for production use. No warranty.** This kit checks *policy decisions*; it is a test harness, not a payment-security library.
 
-A portable, executable test suite for mandate validators used in autonomous AI agent payment systems. This kit enables an engineer building agentic payment systems to test their own mandate validator against 6 concrete attack vectors and receive an automated per-control PASS/FAIL verification backed by machine-checked formal proofs.
+![Node](https://img.shields.io/badge/node-%E2%89%A518-informational) ![deps](https://img.shields.io/badge/dependencies-none-success) ![network](https://img.shields.io/badge/network-none-success) ![license](https://img.shields.io/badge/license-MIT-blue)
 
-Formal foundation:
-- **Tamarin Model 05:** [`models/05_agent_payment_mandate.spthy`](../../models/05_agent_payment_mandate.spthy)
-- **Formal Verification Results:** [Result R13 in `docs/results.md`](../../docs/results.md#r13-14-nov-2026-agent-payment-mandate-case-study-which-check-stops-which-loss)
-- **Case Study:** [UPI-style Agent Mandate Case Study (`docs/case-study-upi.md`)](../../docs/case-study-upi.md)
-- **Whitepaper:** [Agent Authorization for Indian Payments (`whitepaper/agent-payments-india.md`)](../../whitepaper/agent-payments-india.md)
-- **Specification:** [SPEC.md](SPEC.md)
+A portable, dependency-free test suite that lets an engineer building AI-agent payments check their **own** payment-mandate validator against six concrete attacks and get an automated, per-control PASS/FAIL — backed by a machine-checked formal proof ([Tamarin Model 05](../../models/05_agent_payment_mandate.spthy), [result R13](../../docs/results.md)).
 
-*Researcher:* Harsh Thumar (remote participant, IETF 127; independent researcher).
+The attacks here are **well-understood, textbook** failure modes. What the model adds is proof that each of the six controls is *strictly necessary* and that together they are *sufficient* — none is redundant, none is missing.
 
 ---
 
-## 1. What This Kit Tests
+## TL;DR
 
-When an AI agent pays on behalf of a human user under an authorization mandate, every payment must remain strictly inside what the human approved. In Model 05, Tamarin proved the exact necessary and sufficient controls governing three fundamental properties:
+```bash
+git clone https://github.com/HarshThumar/mcp-auth-tamarin.git
+cd mcp-auth-tamarin/conformance/agent-payments
 
-1. **P10 (Money stays inside approval / `debit_within_intent`):** Every debit is made to the approved payee, at the intended payment server, and for an amount within the approved cap.
-2. **P11 (No payment after revocation / `no_debit_after_revocation`):** No debit occurs under a mandate after the user has revoked or cancelled it.
-3. **P12 (Honest agent requests cannot be forged / `debit_requested_by_agent`):** Leaked payment requests cannot be replayed or rewritten under a fresh payment ID.
+node run_conformance.mjs                 # reference validator → 13/13 PASS, exit 0
+node run_conformance.mjs --demo-weak     # a broken validator → payee + revocation FAIL, exit 1
+node run_conformance.mjs --adapter ./my-adapter.mjs   # test YOUR validator
+```
 
-Omitting any single control exposes the payment flow to a textbook failure mode:
+Requires **Node ≥ 18**. No `npm install`, no network, no configuration.
 
-### Necessary and Sufficient Controls Table
+---
 
-| Property | Necessary & Sufficient Controls | Attack When Control is Dropped |
+## Contents
+
+- [What it tests](#1-what-it-tests) · the six controls and the three proven properties
+- [Standards](#2-standards) · the generic OAuth building blocks it uses
+- [Test your validator](#3-test-your-validator) · the 4-step loop
+- [Reading the output](#4-reading-the-output) · table, defense map, exit codes
+- [Use it in CI](#5-use-it-in-ci)
+- [Scope and limitations](#6-scope-and-limitations) · **read before relying on it**
+- [File manifest](#7-file-manifest) · [Citation](#8-citation) · [License](#license)
+
+---
+
+## 1. What it tests
+
+When an AI agent pays on a user's behalf under a mandate, every debit must stay strictly inside what the user approved. Model 05 proves the necessary-and-sufficient controls for three properties:
+
+- **P10 — money stays inside approval** (`debit_within_intent`): every debit goes to the approved payee, at the intended payment server, within the approved cap.
+- **P11 — nothing paid after revocation** (`no_debit_after_revocation`): no debit occurs once the user has cancelled the mandate.
+- **P12 — an honest agent's request can't be forged** (`debit_requested_by_agent`): a leaked request can't be replayed or rewritten under a fresh payment ID.
+
+Drop any single control and one textbook attack opens up:
+
+| Property | Necessary & sufficient controls | Attack when the control is dropped |
 |---|---|---|
-| **P10** | `consent_binding` **AND** `payee_check` **AND** `amount_cap_check` **AND** `audience_check` (all 4 required) | **1. Consent binding dropped:** Consent substitution (mandate issued without user approval).<br>**2. Payee check dropped:** Payee redirection (funds diverted to unapproved merchant).<br>**3. Amount cap check dropped:** Over-debit (payment exceeding authorized cap).<br>**4. Audience check dropped:** Cross-server token replay (mandate for bank A presented to bank B). |
-| **P11** | `revocation_check` (online check at payment time) | **5. Revocation check dropped:** Post-revocation debit (payments continue after user cancels mandate). |
-| **P12** | `sender_constraint` (agent cryptographic proof of possession matching `cnf`) | **6. Sender constraint dropped:** Bearer replay (attacker replays leaked request with a fresh transaction ID). |
+| **P10** | `consent_binding` **AND** `payee_check` **AND** `amount_cap_check` **AND** `audience_check` | **1.** consent off → consent substitution (mandate the user never approved)<br>**2.** payee off → payee redirection (funds to an unapproved merchant)<br>**3.** amount cap off → over-debit (more than the user allowed)<br>**4.** audience off → cross-server replay (a mandate for server A used at server B) |
+| **P11** | `revocation_check` (online, at payment time) | **5.** revocation off → post-revocation debit (payments continue after cancel) |
+| **P12** | `sender_constraint` (agent proof-of-possession matching `cnf`) | **6.** sender-constraint off → bearer replay (anyone who sees one request replays it) |
 
-> **Context on attacks:** These attacks represent well-understood, textbook consequences of missing security checks. What Model 05 provides is machine-checked proof that every check is strictly necessary and that none is redundant.
-
----
-
-## 2. Standards-Based Design
-
-This kit is built strictly on generic, open internet standards:
-- **RFC 9396** (OAuth 2.0 Rich Authorization Requests): Mandates are modeled as `authorization_details` of type `"payment_mandate"`.
-- **RFC 8707** / **RFC 7519**: Audience restriction (`aud`) targeting the specific payment server.
-- **RFC 9449** / **RFC 7800**: Confirmation keys (`cnf`) and DPoP-style proof-of-possession tokens.
-- **draft-mishra-oauth-agent-grants-02**: Agent delegation profile and consent safeguards.
-
-The validator logic evaluates **policy rules only**. Cryptographic operations (signature verification) and external state queries (revocation lookups) are injected as dependencies (`deps`), avoiding flawed in-band cryptography.
+The full rule statements, with the exact mandate and request shapes, are in **[SPEC.md](SPEC.md)**.
 
 ---
 
-## 3. Four-Step "How to Test Your Validator"
+## 2. Standards
 
-### Step 1: Implement the Adapter Interface
+Generic, open internet standards only — no proprietary or scheme-specific message formats:
 
-Create an adapter module (e.g. `my-adapter.mjs`) exporting a `decide` function:
+| Building block | Standard | Role in the mandate |
+|---|---|---|
+| Rich authorization request | **RFC 9396** | the mandate as `authorization_details` (payee, amount cap, audience, `cnf`, consent) |
+| Audience restriction | **RFC 8707** / **RFC 7519** | the mandate is valid at one payment server only |
+| Proof-of-possession | **RFC 9449** (DPoP) / **RFC 7800** (`cnf`) | the agent signs each request with its bound key |
+| Revocation | **RFC 7009** | online check at payment time |
+| Agent delegation profile | **draft-mishra-oauth-agent-grants-02** | consent and delegation safeguards |
+
+The validator evaluates **policy only**. Cryptographic verification (`verifyProofOfPossession`) and external state (`revocationLookup`) are **injected as dependencies** — the kit never ships its own crypto, so there is no in-band crypto to get wrong.
+
+---
+
+## 3. Test your validator
+
+**Step 1 — implement the adapter.** One function that hands a mandate + request to your validator and returns a verdict:
 
 ```javascript
 /**
- * @param {Object} params
- * @param {Object} params.mandate - RFC 9396 mandate object
- * @param {Object} params.request - Payment request object
- * @param {Object} params.deps - Injected dependencies (verifyProofOfPossession, revocationLookup)
+ * @param {Object}   p
+ * @param {Object}   p.mandate  - RFC 9396 mandate (see SPEC.md §2)
+ * @param {Object}   p.request  - payment request (see SPEC.md §3)
+ * @param {Object}   p.deps     - { verifyProofOfPossession(request, cnf), revocationLookup(mandateId) }
  * @returns {Promise<{ allow: boolean, reason: string }>}
  */
 export async function decide({ mandate, request, deps }) {
-  // Call your mandate validator implementation here:
-  const isAuthorized = await myValidator.check(mandate, request, deps);
-  return {
-    allow: isAuthorized,
-    reason: isAuthorized ? 'Authorized' : 'Policy validation failed'
-  };
+  const ok = await myValidator.check(mandate, request, deps);   // ← your code
+  return { allow: ok, reason: ok ? 'authorized' : 'policy check failed' };
 }
 ```
 
-See [`adapter.example.mjs`](adapter.example.mjs) for a reference implementation.
+See **[adapter.example.mjs](adapter.example.mjs)** for a working wiring.
 
-### Step 2: Run the Conformance Test Suite
-
-Run the conformance CLI harness with plain Node.js (>= 18, zero dependencies):
+**Step 2 — run it** against your adapter:
 
 ```bash
-node conformance/agent-payments/run_conformance.mjs --adapter ./my-adapter.mjs
+node run_conformance.mjs --adapter ./my-adapter.mjs
 ```
 
-### Step 3: Read the Per-Control PASS/FAIL Table
+**Step 3 — read the per-control table** (next section).
 
-The runner outputs an aligned table reporting the decision on every attack vector and legitimate positive control:
+**Step 4 — fix any `FAIL`.** Each row names the control, the property it protects, and the attack it missed; the **defense map** footer and **[SPEC.md](SPEC.md)** give the rule to implement.
+
+---
+
+## 4. Reading the output
+
+Each control has a negative vector (the attack — your validator must `deny`) and a positive one (the legitimate version — must `allow`), plus a happy-path baseline:
 
 ```text
---------------------------------------------------------------------------------------------------------------
-Control             | Prop   | Attack / Scenario                              | Expect   | Got      | Result  
---------------------------------------------------------------------------------------------------------------
-all                 | P10    | Baseline legitimate payment request satisfy... | allow    | allow    | PASS    
-consent_binding     | P10    | Consent substitution attack: mandate issued... | deny     | deny     | PASS    
-consent_binding     | P10    | Consent binding verified: mandate carries a... | allow    | allow    | PASS    
-payee_check         | P10    | Payee redirection attack: agent attempts de... | deny     | deny     | PASS    
-payee_check         | P10    | Payee check verified: requested payee exact... | allow    | allow    | PASS    
-amount_cap_check    | P10    | Over-debit attack: requested amount exceeds... | deny     | deny     | PASS    
-amount_cap_check    | P10    | Amount cap check verified: requested amount... | allow    | allow    | PASS    
-audience_check      | P10    | Cross-server replay attack: mandate present... | deny     | deny     | PASS    
-audience_check      | P10    | Audience check verified: requested audience... | allow    | allow    | PASS    
-sender_constraint   | P12    | Bearer replay attack: leaked payment reques... | deny     | deny     | PASS    
-sender_constraint   | P12    | Sender constraint verified: valid cryptogra... | allow    | allow    | PASS    
-revocation_check    | P11    | Post-revocation debit attack: payment attem... | deny     | deny     | PASS    
-revocation_check    | P11    | Revocation check verified: mandate confirme... | allow    | allow    | PASS    
---------------------------------------------------------------------------------------------------------------
+Control             | Prop   | Attack / Scenario                    | Expect | Got    | Result
+all                 | P10    | Baseline legitimate payment ...      | allow  | allow  | PASS
+payee_check         | P10    | Payee redirection attack: ...        | deny   | deny   | PASS
+revocation_check    | P11    | Post-revocation debit attack: ...    | deny   | deny   | PASS
+...
+Summary: 13 passed, 0 failed (out of 13 vectors)
 ```
 
-### Step 4: Fix Any Failing Controls
+A **defense map** then prints `control → property → attack → guard → RFC clause → model`, so a `FAIL` points straight at the standard and the lemma behind it.
 
-If any test fails, consult the **Defense Map** printed at the bottom of the test run and review the rule specifications in [`SPEC.md`](SPEC.md).
+**Exit codes** (so the kit scripts cleanly):
+
+| Command | Meaning | Exit |
+|---|---|---|
+| `run_conformance.mjs [--adapter …]` | all vectors matched their expectation | `0` |
+| `run_conformance.mjs [--adapter …]` | one or more vectors failed | non-zero |
+| `run_conformance.mjs --demo-weak` | demonstration of the intentionally-weak validator (payee + revocation `FAIL` **on purpose**) | non-zero |
+
+`--demo-weak` runs the deliberately incomplete [`reference/weak-validator.mjs`](reference/weak-validator.mjs) so you can see the harness actually catch a gap — its non-zero exit is expected, not a suite failure.
 
 ---
 
-## 4. Demonstrating the Test Harness
+## 5. Use it in CI
 
-### Running the Reference Validator
-To run the full suite against the included reference validator ([`reference/validator.mjs`](reference/validator.mjs)):
+The runner exits non-zero on any mismatch, so one line gates a build:
 
-```bash
-node conformance/agent-payments/run_conformance.mjs
+```yaml
+# GitHub Actions
+- uses: actions/setup-node@v4
+  with: { node-version: 20 }
+- run: node conformance/agent-payments/run_conformance.mjs --adapter ./path/to/your-adapter.mjs
 ```
-*(All 13 vectors PASS; exit code 0)*
 
-### Running the Demonstration Weak Validator
-To demonstrate that the test harness actively catches missing controls, run the deliberately incomplete validator ([`reference/weak-validator.mjs`](reference/weak-validator.mjs)):
-
-```bash
-node conformance/agent-payments/run_conformance.mjs --demo-weak
-```
-*(Catches missing `payee_check` and `revocation_check` controls; exits non-zero)*
+Treat a new `FAIL` as a regression in your mandate validator.
 
 ---
 
-## 5. File Manifest
+## 6. Scope and limitations
 
-- [`README.md`](README.md): This documentation and quick-start guide.
-- [`SPEC.md`](SPEC.md): Mandate schema, payment request format, and the 6 formal policy rules.
-- [`adapter.example.mjs`](adapter.example.mjs): Reference adapter interface and example wiring.
-- [`vectors.mjs`](vectors.mjs): Complete set of test vectors (attack cases + positive controls).
-- [`reference/validator.mjs`](reference/validator.mjs): Reference validator implementing all 6 policy checks.
-- [`reference/weak-validator.mjs`](reference/weak-validator.mjs): Deliberately incomplete validator demonstrating failure detection.
-- [`run_conformance.mjs`](run_conformance.mjs): Conformance test runner CLI harness.
+**Please read this before relying on the kit.**
+
+- **It is a reference / conformance test, not production security code.** Every file carries that banner. Do not drop `reference/validator.mjs` into a real payment path.
+- **It tests policy, not cryptography.** PoP verification and revocation lookups are injected stubs. A `PASS` says your *policy logic* matches the proven controls — it says nothing about the strength of your signatures, key storage, or revocation backend.
+- **The vectors are illustrative, not exhaustive.** They cover the six controls Model 05 proves. They are not a full attack corpus; passing is necessary, not a guarantee of security.
+- **The model abstracts.** Model 05 does not model wall-clock time (e.g. mandate expiry timing) and the search is not exhaustive over all real-world message formats. See [`docs/threat-model.md`](../../docs/threat-model.md) for every assumption.
+- **Examples are generic.** Identifiers, amounts and payees are invented placeholders; no real scheme message formats, banks, or operators are used or implied.
+
+Found a gap in the kit or the model? See [CONTRIBUTING.md](../../CONTRIBUTING.md); for a weakness in a real implementation, [SECURITY.md](../../SECURITY.md) (private disclosure first).
+
+---
+
+## 7. File manifest
+
+| File | What |
+|---|---|
+| [`README.md`](README.md) | this guide |
+| [`SPEC.md`](SPEC.md) | mandate + request shapes and the 6 policy rules (→ control / property / attack / RFC) |
+| [`adapter.example.mjs`](adapter.example.mjs) | the adapter interface + a working example |
+| [`vectors.mjs`](vectors.mjs) | all test vectors (attack + positive control per control, plus baseline) |
+| [`reference/validator.mjs`](reference/validator.mjs) | reference validator — all 6 checks, policy only; passes every vector |
+| [`reference/weak-validator.mjs`](reference/weak-validator.mjs) | deliberately incomplete validator for `--demo-weak` |
+| [`run_conformance.mjs`](run_conformance.mjs) | the CLI runner |
+
+**Formal foundation:** [Model 05](../../models/05_agent_payment_mandate.spthy) · [result R13](../../docs/results.md) · [case study](../../docs/case-study-upi.md) · [whitepaper](../../whitepaper/agent-payments-india.md) · [ablation lattice](../../docs/ablation.md)
+
+---
+
+## 8. Citation
+
+> Harsh Thumar (remote participant, IETF 127; independent researcher). *Agent-Payments Mandate Conformance Kit*, `mcp-auth-tamarin`, 2026. https://github.com/HarshThumar/mcp-auth-tamarin
+
+---
+
+## License
+
+[MIT](../../LICENSE) © 2026 Harsh Thumar

@@ -33,7 +33,7 @@ Each missing check enables a concrete, already well-understood attack (section 4
 
 Practical takeaways: bind the mandate to the payee, the cap, the one payment server and the agent's key; make the revocation check a per-payment online lookup rather than relying on expiry; require the agent to sign each payment request; and log the evidence needed to show what the person approved. A checklist is in section 7.
 
-Everything is reproducible with one Docker command (section 9). Companion material: [engineering blog post](../blog/2026-11-ietf127-mcp-authorization.md) · Model → SDK verification: [docs/implementation-check.md](../docs/implementation-check.md).
+Everything is reproducible with one Docker command (section 9). Companion material: [engineering blog post](../blog/2026-11-ietf127-mcp-authorization.md) · Model → SDK verification: [docs/implementation-check.md](../docs/implementation-check.md) · Test your own validator: [agent-payments conformance kit](../conformance/agent-payments/).
 
 # 2. The problem: agents paying under mandates
 
