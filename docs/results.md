@@ -1,6 +1,8 @@
 # Results
 
-*All models last checked 14 Nov 2026 with Tamarin 1.12.0 and Maude 3.5.1 (local WSL run; CI runs the same script).* `scripts/prove.sh` (and CI) checks every expectation automatically: **376/376 pass** (188 security-property results, 188 helper or sanity lemmas) across 9 models, with no well-formedness warnings, in about 60 minutes locally with `JOBS=4`. Every combination of removed checks is in [ablation.md](ablation.md). The full Tamarin output is saved in `results/` and uploaded as a CI artifact. Property numbers (P1–P12) are the same in every model; see [flow.md](flow.md) §3.
+*All models last checked 14 Nov 2026 with Tamarin 1.12.0 and Maude 3.5.1 (local WSL run; CI runs the same script).* `scripts/prove.sh` (and CI) checks every expectation automatically: **376/376 pass** (188 security-property results, 188 helper or sanity lemmas) across 9 models, with no well-formedness warnings, in about 60 minutes locally with `JOBS=4`. Every combination of removed checks is in [ablation.md](ablation.md). The full Tamarin output is saved in `results/` and uploaded as a CI artifact. Property numbers (P1–P13b) are the same in every model; see [flow.md](flow.md) §3.
+
+**Redundancy coverage.** Models 02, 03, 04 and 09 each have a CI row where one check is removed and the property still holds because another check covers it (02 P6: PKCE or `state`; 03 P2-P4: assertion `aud` or `iss`; 04 P5: client binding or ID-JAG `aud`; 09 P13: `UNION_ACROSS_RESOURCES` alone). Model 06 has a row where the AS-side check is removed (`AS_LENIENT`) and P7 and P3 still hold, because the client's audience check alone is enough. In models 01, 05, 07 and 08 the ablation ([ablation.md](ablation.md)) shows that every check is necessary for the property it protects, so there is no redundant check to test.
 
 ### Model 01: credential binding (revised 14 Nov 2026)
 

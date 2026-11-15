@@ -1,0 +1,15 @@
+{
+  "name": "mcp-auth-conformance-typescript",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "In-process MCP authorization conformance checks for the TypeScript SDKs",
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/client": "2.4.0",
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "jose": "6.2.17"
+  }
+}

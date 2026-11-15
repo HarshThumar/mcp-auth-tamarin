@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+message: "If you use these models, please cite them as below."
+title: "mcp-auth-tamarin: a Tamarin model of MCP authorization"
+type: software
+authors:
+  - family-names: Thumar
+    given-names: Harsh
+repository-code: "https://github.com/HarshThumar/mcp-auth-tamarin"
+license: MIT

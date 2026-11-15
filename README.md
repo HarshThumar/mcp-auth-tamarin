@@ -6,6 +6,8 @@
 
 > Status: **work in progress**, started for the [IETF 127 Hackathon](https://wiki.ietf.org/en/meeting/127/hackathon) (14–15 Nov 2026, remote).
 
+**For implementers:** [MCP authorization: checks your client / server / AS must do, machine-checked](docs/implementer-checklist.md).
+
 ## Why
 
 In the [Model Context Protocol](https://modelcontextprotocol.io/specification/draft/basic/authorization), the server a client connects to tells the client which authorization server to use ([RFC 9728](https://datatracker.ietf.org/doc/rfc9728/) Protected Resource Metadata). That server may be untrusted. A single client identity can also be reused across many authorization servers (Client ID Metadata Documents), and the Enterprise-Managed Authorization extension chains an [RFC 8693](https://datatracker.ietf.org/doc/rfc8693/) token exchange at the identity provider with an [RFC 7523](https://datatracker.ietf.org/doc/rfc7523/) JWT bearer grant at the MCP authorization server.
@@ -49,6 +51,17 @@ tamarin-prover interactive models/        # web UI at http://127.0.0.1:3001 (nee
 ```
 
 CI (GitHub Actions) runs `scripts/prove.sh` on every push.
+
+## Reproduce
+
+One command, in Docker (Tamarin 1.12.0 and Maude 3.5.1, pinned with checksums in the [Dockerfile](Dockerfile)):
+
+```bash
+scripts/reproduce.sh                              # full run: both linters, then every variant
+ONLY=01 TIMEOUT=600 JOBS=1 scripts/reproduce.sh   # quick smoke test (model 01 only)
+```
+
+`ONLY`, `TIMEOUT` and `JOBS` are passed through to `scripts/prove.sh`. The script prints the final `Checked N lemma results` line and exits nonzero on any failure. The full run takes about 60 minutes at `JOBS=4` and needs about 9-10 GB of RAM. Each model-03 variant needs about 3 GB, so do not run many of them in parallel on a small machine (the OOM killer ends them with exit code 143).
 
 ## Repository layout
 
