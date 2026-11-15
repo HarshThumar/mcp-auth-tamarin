@@ -90,6 +90,31 @@ test('CT-04 metadata issuer match accepted', async () => {
   assert.equal(md.issuer, HONEST);
 });
 
+// CT-05: client credentials registered at one AS are not reused at another (model 01; GHSA-qx49-fqc8-xw99).
+// Applies to records stamped with their issuer, as the SDK's registration flow produces.
+test('CT-05 credentials stamped with another AS are refused', async () => quiet(async () => {
+  const w = world();
+  const p = {
+    ...provider({}),
+    saveClientInformation: undefined,
+    clientInformation: () => ({ client_id: 'CID_OTHER', client_secret: 'sec', issuer: OTHER }),
+  };
+  await assert.rejects(
+    V2.auth(p, { serverUrl: SERVER, fetchFn: w.fetchFn }),
+    (e) => e instanceof V2.AuthorizationServerMismatchError
+  );
+}));
+test('CT-05 credentials stamped with matching AS are accepted', async () => quiet(async () => {
+  const w = world(), store = { ci: { client_id: 'CID_HONEST', client_secret: 'sec', issuer: HONEST } };
+  const p = {
+    ...provider(store),
+    saveClientInformation: undefined,
+  };
+  assert.equal(await V2.auth(p, { serverUrl: SERVER, fetchFn: w.fetchFn }), 'REDIRECT');
+  assert.equal(new URL(store.redirect).searchParams.get('client_id'), 'CID_HONEST');
+  assert.ok(!w.log.some((x) => x.path === '/register'));
+}));
+
 // CT-06: RFC 8707 `resource` is sent on /authorize and /token, taken from protected-resource metadata (model 02 NO_RESOURCE; R4).
 test('CT-06 resource sent on /authorize and /token, value from PRM', async () => quiet(async () => {
   const w = world(), store = {}, p = provider(store);

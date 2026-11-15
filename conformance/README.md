@@ -16,9 +16,9 @@ No sockets, no network, no third-party systems: HTTP is mocked (fake `fetch`, St
 | CT-02 | Client rejects `iss` of another AS | 02 `NO_ISS`, [R2](../docs/results.md) | 2 | 4 |
 | CT-03 | Absent `iss`: reject if advertised, accept if not | 02 `ISS_OPTIONAL`, [R3](../docs/results.md) | 2 | 3 |
 | CT-04 | AS metadata `issuer` equals fetched issuer | 01/03 `NO_META_CHECK`, [R0, R8](../docs/results.md) | 2 | 2 |
-| CT-05 | Credentials bound to their AS | 01, GHSA-qx49-fqc8-xw99 | 1 | not ported |
-| CT-06 | RFC 8707 `resource` on authorize and token; PRM mismatch refused | 02 `NO_RESOURCE`, [R4](../docs/results.md) | not ported | 2 |
-| CT-07 | Assertion `aud` = validated AS issuer | 06, [R12](../docs/results.md) | not ported | 2 |
+| CT-05 | Credentials bound to their AS | 01, GHSA-qx49-fqc8-xw99 | 1 | 2 |
+| CT-06 | RFC 8707 `resource` on authorize and token; PRM mismatch refused | 02 `NO_RESOURCE`, [R4](../docs/results.md) | 2 | 2 |
+| CT-07 | Assertion `aud` = validated AS issuer | 06, [R12](../docs/results.md) | 2 | 2 |
 | CT-08 | Exact `redirect_uri` match at `/authorize` and `/token` | 02 `NO_REDIRECT_CHECK`, [R11](../docs/results.md) | 17 | not ported (no server auth router in the 2.4.0 packages) |
 
 Test names start with the case ID (`test_ct01_...`, `'CT-01 ...'`), so a failure points straight at [spec.md](spec.md).
@@ -48,7 +48,7 @@ npm test
 
 Versions are pinned (`mcp==2.3.0`; client 2.4.0; sdk 1.32.2). To test another version, change the pin and re-run; a failure means the SDK no longer performs the check on that path, or its API moved (the tests call a few SDK helpers directly, for example `validate_authorization_response_iss` and `validateAuthorizationResponseIssuer`).
 
-Result on the pinned versions (15 Nov 2026): Python 27 passed; TypeScript 16 passed.
+Result on the pinned versions (15 Nov 2026): Python 31 passed; TypeScript 18 passed.
 
 ## Port to another SDK
 
