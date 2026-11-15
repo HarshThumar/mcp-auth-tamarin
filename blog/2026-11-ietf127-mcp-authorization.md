@@ -41,7 +41,7 @@ sequenceDiagram
 
 ## What we did
 
-During the IETF 127 Hackathon (14–15 November 2026, remote), we modeled the MCP authorization flow in the Tamarin prover, a symbolic verification tool for cryptographic protocols. Tamarin tests protocols against a standard Dolev-Yao attacker who controls the network—capable of intercepting, rewriting, and injecting traffic—while operating dishonest authorization servers, rogue resource servers, and malicious clients.
+During the IETF 127 Hackathon (14-15 November 2026, remote), we modeled the MCP authorization flow in the Tamarin prover, a symbolic verification tool for cryptographic protocols. Tamarin tests protocols against a standard Dolev-Yao attacker who controls the network, capable of intercepting, rewriting, and injecting traffic, while operating dishonest authorization servers, rogue resource servers, and malicious clients.
 
 The repository contains 9 models (`models/01` through `models/09`):
 
