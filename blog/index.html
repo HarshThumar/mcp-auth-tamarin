@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -24,7 +24,7 @@
       --font-serif: 'Newsreader', Georgia, serif;
       --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
-      /* Colors - Light Mode (Josh Comeau inspired: warm off-white, playful accents, deep slate text) */
+      /* Colors - Clean Editorial Light Mode */
       --color-bg: #fafbfc;
       --color-surface: #ffffff;
       --color-surface-sunken: #f1f5f9;
@@ -61,39 +61,6 @@
       --breakout-width: 1040px;
       --full-width: 1280px;
       --viewport-pad: clamp(16px, 4vw, 36px);
-    }
-
-    [data-theme="dark"] {
-      --color-bg: #0b0f19;
-      --color-surface: #111827;
-      --color-surface-sunken: #080d1a;
-      --color-surface-raised: #1f2937;
-      --color-border: #1f2937;
-      --color-border-subtle: #192231;
-      
-      --color-text-main: #f8fafc;
-      --color-text-muted: #94a3b8;
-      --color-text-faint: #64748b;
-      
-      --color-primary: #60a5fa;
-      --color-primary-hover: #93c5fd;
-      --color-primary-soft: #172554;
-      --color-primary-border: #1e3a8a;
-
-      --color-indigo: #818cf8;
-      --color-indigo-soft: #1e1b4b;
-      --color-amber: #fbbf24;
-      --color-amber-soft: #451a03;
-      --color-emerald: #34d399;
-      --color-emerald-soft: #064e3b;
-      --color-rose: #fb7185;
-      --color-rose-soft: #4c0519;
-      --color-purple: #a78bfa;
-      --color-purple-soft: #2e1065;
-
-      --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
-      --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.5);
-      --shadow-lg: 0 12px 24px -4px rgba(0, 0, 0, 0.6);
     }
 
     html {
@@ -135,10 +102,6 @@
       transition: background-color 0.25s ease, border-color 0.25s ease;
     }
 
-    [data-theme="dark"] .site-nav {
-      background-color: rgba(11, 15, 25, 0.88);
-    }
-
     .nav-inner {
       max-width: var(--full-width);
       margin: 0 auto;
@@ -156,18 +119,18 @@
       color: var(--color-text-main);
     }
 
-    .brand-symbol {
+    .brand-logo {
       width: 32px;
       height: 32px;
       border-radius: 8px;
-      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      font-weight: 800;
-      font-size: 15px;
-      box-shadow: 0 2px 6px rgba(59, 130, 246, 0.35);
+      display: block;
+      box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
+      flex-shrink: 0;
+      transition: transform 0.15s ease;
+    }
+
+    .brand-group:hover .brand-logo {
+      transform: scale(1.05);
     }
 
     .brand-title {
@@ -179,7 +142,7 @@
     .nav-actions {
       display: flex;
       align-items: center;
-      gap: 18px;
+      gap: 20px;
     }
 
     .nav-link {
@@ -195,27 +158,6 @@
 
     .nav-link:hover {
       color: var(--color-primary);
-    }
-
-    /* Theme Toggle Button */
-    .theme-toggle-btn {
-      background: var(--color-surface-sunken);
-      border: 1px solid var(--color-border);
-      color: var(--color-text-main);
-      padding: 8px 12px;
-      border-radius: 20px;
-      cursor: pointer;
-      font-size: 0.85rem;
-      font-weight: 600;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      transition: all 0.2s ease;
-    }
-
-    .theme-toggle-btn:hover {
-      background: var(--color-surface-raised);
-      border-color: var(--color-primary);
     }
 
     /* 3-Tier Grid System (Josh Comeau Architecture) */
@@ -417,11 +359,6 @@
     .callout-box.pitfall .callout-header { color: #9f1239; }
     .callout-box.india .callout-header { color: #92400e; }
     .callout-box.verified .callout-header { color: #065f46; }
-
-    [data-theme="dark"] .callout-box.info .callout-header { color: #93c5fd; }
-    [data-theme="dark"] .callout-box.pitfall .callout-header { color: #fda4af; }
-    [data-theme="dark"] .callout-box.india .callout-header { color: #fde68a; }
-    [data-theme="dark"] .callout-box.verified .callout-header { color: #6ee7b7; }
 
     .callout-box p:last-child {
       margin-bottom: 0;
@@ -731,9 +668,6 @@
     .explorer-card.vulnerability .card-header { color: #e11d48; }
     .explorer-card.hardened .card-header { color: #059669; }
 
-    [data-theme="dark"] .explorer-card.vulnerability .card-header { color: #fb7185; }
-    [data-theme="dark"] .explorer-card.hardened .card-header { color: #34d399; }
-
     .card-body-text {
       font-size: 0.92rem;
       line-height: 1.6;
@@ -795,11 +729,6 @@
       border: 1px solid #a7f3d0;
     }
 
-    [data-theme="dark"] .badge-shipped {
-      color: #6ee7b7;
-      border-color: #064e3b;
-    }
-
     /* Discussion / Interactive Card */
     .question-card {
       background: linear-gradient(135deg, var(--color-surface), var(--color-surface-sunken));
@@ -848,7 +777,19 @@
   <nav class="site-nav">
     <div class="nav-inner">
       <a href="https://github.com/HarshThumar/mcp-auth-tamarin" class="brand-group">
-        <div class="brand-symbol">M</div>
+        <svg class="brand-logo" width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="mcp-auth-tamarin logo">
+          <rect width="32" height="32" rx="8" fill="url(#brand-grad)"/>
+          <defs>
+            <linearGradient id="brand-grad" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#2563eb"/>
+              <stop offset="1" stop-color="#4f46e5"/>
+            </linearGradient>
+          </defs>
+          <!-- Cryptographic Authorization Shield -->
+          <path d="M16 6.5L8.5 9.8V15.5C8.5 20.8 11.7 25.2 16 26.5C20.3 25.2 23.5 20.8 23.5 15.5V9.8L16 6.5Z" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="16" cy="13.2" r="2.2" fill="#ffffff"/>
+          <path d="M14.6 16.2H17.4L18 20.8H14L14.6 16.2Z" fill="#ffffff"/>
+        </svg>
         <div class="brand-title">mcp-auth-tamarin</div>
       </a>
       <div class="nav-actions">
@@ -861,10 +802,6 @@
         <a href="https://github.com/HarshThumar/mcp-auth-tamarin/blob/main/whitepaper/agent-payments-india.md" class="nav-link" target="_blank" rel="noopener">
           <span>Whitepaper</span>
         </a>
-        <button id="theme-btn" class="theme-toggle-btn" aria-label="Toggle theme">
-          <span id="theme-icon">🌙</span>
-          <span id="theme-text">Dark</span>
-        </button>
       </div>
     </div>
   </nav>
@@ -1370,31 +1307,6 @@ docker run --rm mcp-auth-tamarin ./scripts/reproduce.sh</code></pre>
       const height = document.documentElement.scrollHeight - document.documentElement.clientHeight;
       const scrolled = (winScroll / height) * 100;
       document.getElementById('progress-bar').style.width = scrolled + '%';
-    });
-
-    // Theme Toggle Functionality
-    const themeBtn = document.getElementById('theme-btn');
-    const themeIcon = document.getElementById('theme-icon');
-    const themeText = document.getElementById('theme-text');
-
-    function setTheme(theme) {
-      document.documentElement.setAttribute('data-theme', theme);
-      localStorage.setItem('mcp-blog-theme', theme);
-      if (theme === 'dark') {
-        themeIcon.textContent = '☀️';
-        themeText.textContent = 'Light';
-      } else {
-        themeIcon.textContent = '🌙';
-        themeText.textContent = 'Dark';
-      }
-    }
-
-    const savedTheme = localStorage.getItem('mcp-blog-theme') || 'light';
-    setTheme(savedTheme);
-
-    themeBtn.addEventListener('click', () => {
-      const current = document.documentElement.getAttribute('data-theme') || 'light';
-      setTheme(current === 'light' ? 'dark' : 'light');
     });
 
     // Diagram 1 View Toggle
