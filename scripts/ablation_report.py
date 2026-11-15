@@ -92,6 +92,8 @@ def main():
         if any(v in ("A", "N") for v in st.values()):
             for k, v in list(st.items()):
                 if v == "V" and k != "executable":
+                    if k == "rs_accepts_only_consented" and c.get("full_model_p2"):
+                        continue  # decided on the FULL model; not reduced -> keep V
                     st[k] = "R"
     idx = {(c["model"], tuple(c["context"]), frozenset(c["removed"])): c for c in cells}
     problems = []

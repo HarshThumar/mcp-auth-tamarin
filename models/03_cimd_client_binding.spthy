@@ -87,6 +87,19 @@ equations: uncd(cd(x)) = x, unat(at(x)) = x, unrt(rt(x)) = x
 #define ATTACK_LEMMAS
 #endif
 
+// FULL_MODEL (W2 ablation): decide the all-traces P2 proof on the FULL model.
+// Under ATTACK_LEMMAS the attacker's own clients are dropped (the reduced model),
+// so an all-traces proof there does not transfer to the full model. Passing
+// -D=FULL_MODEL re-includes those clients. Off by default: with FULL_MODEL unset,
+// DISHONEST_CLIENTS_ON reduces to `not ATTACK_LEMMAS`, so every existing variant
+// is byte-for-byte unchanged.
+#ifdef not ATTACK_LEMMAS
+#define DISHONEST_CLIENTS_ON
+#endif
+#ifdef FULL_MODEL
+#define DISHONEST_CLIENTS_ON
+#endif
+
 /* ------------------------------------------------------------------ */
 /* Setup                                                              */
 /* ------------------------------------------------------------------ */
@@ -138,7 +151,7 @@ rule Setup_Client:
     [ !Client($C), !ClientKey($C, ~sk), !CIMD($C, pk(~sk)), Out(pk(~sk)) ]
 #endif
 
-#ifdef not PUBLIC & not ATTACK_LEMMAS
+#ifdef not PUBLIC & DISHONEST_CLIENTS_ON
 // Attacker-run CIMD client: its key is the attacker's.
 rule Setup_Dishonest_Client:
     [ Fr(~sk) ]
@@ -221,7 +234,7 @@ rule AS_Authorize:
     [ Code($AS, cd(~code), $U, $C, challenge, $RS)
     , ToClient($C, <'authz_response', cd(~code), $AS>) ]
 
-#ifdef not ATTACK_LEMMAS | PUBLIC
+#ifdef DISHONEST_CLIENTS_ON | PUBLIC
 // Authorization for an attacker-run client: the code goes to the attacker.
 rule AS_Authorize_Dishonest_Client:
     [ In(<'authz_request', $AS, $E, challenge, $RS>)
