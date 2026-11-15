@@ -1,7 +1,7 @@
 ---
 title: "Agent Authorization for Indian Payments, Formally"
 subtitle: "What a UPI-Style Mandate Must Cryptographically Bind When an AI Agent Pays, and Which Defensive Checks Protect What"
-author: "Harsh Thumar - remote participant, IETF; independent researcher"
+author: "Harsh Thumar & Prince Upadhyay - remote participants, IETF 127; independent researchers"
 date: "15 November 2026"
 status: "Draft for Comment"
 ---

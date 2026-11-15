@@ -1,7 +1,7 @@
 ---
 title: "Proving MCP Authorization: What We Modeled, What We Rediscovered, and Why Every Check Matters"
 subtitle: "A machine-checked formal analysis of Model Context Protocol authorization in Tamarin, an ablation lattice of security checks, and a case study on UPI-style agent payments."
-author: "Harsh Thumar - remote participant, IETF 127; independent researcher"
+author: "Harsh Thumar & Prince Upadhyay - remote participants, IETF 127; independent researchers"
 date: "15 November 2026"
 note: "Public write-up; MIT-licensed repo linked below."
 ---
