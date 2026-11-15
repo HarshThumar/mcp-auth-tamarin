@@ -148,6 +148,21 @@ This document provides the Domain-Driven Design (DDD) traceability matrix betwee
 | S8.4 | MCP server calls the downstream API | RFC 8693; MCP "MUST NOT pass through" | `Server_Calls_Downstream` | `ServerDecides`. Fixed: exchanges for its own `aud` = downstream token. `PASSTHROUGH`: forwards the client's token. |
 | S8.5 | Downstream API executes | RFC 8707 §2 at the downstream API | `Downstream_From_Server`, `Downstream_From_Network` | `DownstreamAudCheck` (removed by `D_NO_AUD`). |
 
+### Model 09 (`models/09_scope_step_up.spthy`)
+*Focus: server-driven scope step-up (MCP authorization, Scope Challenge Handling; R16).*
+
+| Step # | Protocol Action | RFC / Spec | Exact Tamarin Rule | State Preconditions & Effects |
+|---|---|---|---|---|
+| S9.1 | Honest and malicious MCP servers | Threat model | `Setup_Honest_RS`, `Setup_Dishonest_RS` | Roles unique per name; `'any'` is not a server name. |
+| S9.2 | User decides per (resource, scope) | Consent screen (RFC 6749 §3.3, §4.1.1; RFC 8707 §2) | `User_Intends` | `!UserIntent(user, resource, level)`: what an honest user approves. |
+| S9.3 | Honest server challenges for a level (403 `insufficient_scope`), client steps up | MCP Scope Challenge Handling; RFC 6750 §3.1 | `Request_Honest` | Only for a level the user's operation needs and the user intends. |
+| S9.4 | Malicious server challenges any level, client treats it as authoritative | MCP Scope Challenge Handling ("MUST treat ... as authoritative") | `Request_Challenged_By_Dishonest` | Any level; adds `!Wanted(user, level)`. |
+| S9.5 | Client sends one scope union across resources | MCP step-up "union of previously requested and challenged scopes" | `Request_Union_Across_Resources` (only with `UNION_ACROSS_RESOURCES`) | Request for H carries a level wanted for any other resource. |
+| S9.6 | AS shows consent for (resource, scope) and issues an audience-bound token | RFC 8707 §2, §3; RFC 6749 §3.3 | `AS_Issue_Prompted` | Needs `!UserIntent` for the same resource and level; token `aud = resource` (`NO_RESOURCE`: broad `'any'`); with `CONSENT_NOT_RESOURCE_BOUND` also records `!ScopeConsent(user, level)`. |
+| S9.7 | AS skips the screen for an already consented scope name | (deviation: consent not bound to resource) | `AS_Issue_From_Scope_Consent` (only with `CONSENT_NOT_RESOURCE_BOUND`) | Needs `!ScopeConsent(user, level)` only. |
+| S9.8 | Token delivered to the server it was requested for | RFC 8707 | `Deliver_To_Dishonest`, `Deliver_To_Honest` | Dishonest: token public. Honest: private channel `ToRS`. |
+| S9.9 | Honest server validates audience and accepts | MCP Token Handling; RFC 8707 §2 | `RS_From_Client`, `RS_From_Network` | `RSAudCheck` (removed by `NO_AUD`; accepts `aud` = itself or `'any'`). `RSAccepts(server, user, token, level)`. |
+
 ---
 
 ## 3. Formal Security Properties (Lemmas)

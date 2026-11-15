@@ -84,6 +84,15 @@ Models 03 and 04 are not tied to one advisory. They check spec-level combination
 - **The server's controls are one event** (`ServerDecides`); P9 asks whether the downstream API can be made to act without it. Rate limits, logging and request validation are not modelled individually.
 - **Malicious MCP servers** keep the tokens clients send them. `PASSTHROUGH` is a design choice, not a removed check: with the downstream audience check on, the passthrough design cannot run at all (`executable` fails), so that variant is vacuous by design.
 
+### Model 09 modelling choices (scope step-up)
+- **Scopes are two independent levels** (`read`, `admin`) per resource. Real scope strings, scope sets and "union" arithmetic are abstracted: the union-across-resources client is modelled as an extra request for the honest server that carries any level wanted for another resource.
+- **Approval = intention.** An honest user approves exactly the (resource, scope) pairs in `!UserIntent`, and the trace chooses them (so the user may intend `admin` at the malicious server and only `read` at the honest one). A malicious server may challenge any level and the client follows it (MCP: "authoritative"). No attacker-run client or attacker-built authorization request is modelled (models 02 and 07 cover that).
+- **The honest server's challenge is folded into the request.** An honest server only causes a step-up for a level the user's operation intends; the 401/403 round trip is not a separate rule.
+- **One AS rule for authorization request, code and token request.** Code and PKCE are covered by models 02 and 07. Consent screen = `!UserIntent` lookup; `CONSENT_NOT_RESOURCE_BOUND` models an AS (or client-side consent cache) that remembers consent per scope name.
+- **`NO_RESOURCE` as in model 02:** the AS ignores `resource` and issues the broad audience `'any'`, which the honest server's audience check accepts. `'any'` is excluded as a server name.
+- **Tokens for the malicious server are public; tokens for the honest server are private** (client's own channel), but the attacker may present any token it knows.
+- **Out of scope:** scope downgrade, refresh-token scope handling, `insufficient_scope` loops and denial of service, user fatigue (the user is assumed to read the screen), operations within a granted scope.
+
 ### Model 05 modelling choices (agent payment mandate, case study)
 - **No real mandate standard to pin:** draft-mishra-oauth-agent-grants-02 has no mandate object; payee and amount cap are modelled as RFC 9396 `authorization_details` inside the signed mandate token. NPCI UPI Circle rules are taken from a secondary summary and only motivate the checks; the model does not claim to be UPI.
 - **Amounts are two classes** (`small`, `large`; `large` allows both). Monthly totals, cooling periods and clocks are left out (no arithmetic or time in Tamarin); revocation is an event ordering, and the online status check is a restriction "debit before revocation".

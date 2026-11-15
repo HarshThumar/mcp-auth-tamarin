@@ -1,0 +1,185 @@
+theory MCP_Scope_Step_Up
+begin
+
+/*
+ * Model 09: server-driven scope step-up. Can a malicious MCP server, through
+ * scope challenges, make an honest user's client end up with a token that an
+ * HONEST MCP server accepts with a scope the user never approved for that
+ * honest server?
+ *
+ * Spec pinned: MCP authorization, "Scope Selection Strategy" and "Scope
+ *   Challenge Handling", draft as of 14 Nov 2026: servers SHOULD include
+ *   `scope` in the WWW-Authenticate challenge of a 401/403; challenged scopes
+ *   may be any set; "Clients MUST treat the scopes provided in the challenge
+ *   as authoritative for the current operation"; on 403 `insufficient_scope`
+ *   clients SHOULD step up by requesting the union of previously requested
+ *   or granted scopes and the challenged scopes; the client MUST send the
+ *   RFC 8707 `resource` parameter in authorization and token requests.
+ *   MCP Token Handling: servers MUST validate that tokens were issued for
+ *   them as the audience (RFC 8707 §2). RFC 6750 §3.1 `insufficient_scope`.
+ *
+ * Setting
+ *   One AS shared by an honest MCP server H and a malicious MCP server M.
+ *   Each resource has two scope levels, 'read' and 'admin'. The honest user's
+ *   consent screen shows (resource, scope) and the user approves exactly the
+ *   (resource, scope) pairs it intends (!UserIntent). M may challenge any
+ *   level; the client follows the challenge. Tokens carry (aud, scope).
+ *
+ * Properties (global numbering, docs/flow.md §3)
+ *   P13  rs_accepts_only_approved_scope: the honest MCP server accepts a token
+ *        for a user with scope s only if the user approved s for that server.
+ *   P13b as_issues_only_intended_scope: the AS issues a token for (user,
+ *        resource, scope) only if the user approved that scope for that
+ *        resource (AS-side core of P13; no audience reasoning).
+ *
+ * Variants (one flag = one check, or one client design choice)
+ *   NO_AUD                      the honest server does not check the token audience
+ *   NO_RESOURCE                 the AS ignores `resource` and issues a broad audience
+ *   CONSENT_NOT_RESOURCE_BOUND  the AS remembers consent per scope name only
+ *                               (not per resource) and skips the screen later
+ *   UNION_ACROSS_RESOURCES      the client keeps ONE scope union across all
+ *                               resources instead of one per resource
+ *
+ * Abstraction (docs/threat-model.md, "Model 09 modelling choices")
+ *   - Authorization request, code and token request are one AS rule
+ *     (models 02 and 07 cover the code flow); tokens are fresh names looked
+ *     up from a persistent fact (introspection or signed JWT, abstracted).
+ *   - 'admin' and 'read' are independent levels; "union" = the request also
+ *     carries a level wanted for another resource.
+ *   - A token delivered to M reaches the attacker; tokens delivered to H over
+ *     the client's own channel are not known to the attacker.
+ */
+
+#ifdef NO_RESOURCE
+macros: audof(r) = 'any'
+#else
+macros: audof(r) = r
+#endif
+
+rule Setup_Honest_RS:
+    [ ]
+  --[ RS($H), RS_Honest($H) ]->
+    [ !HonestRS($H) ]
+
+rule Setup_Dishonest_RS:
+    [ ]
+  --[ RS($X), Server_Dishonest($X) ]->
+    [ !DishonestRS($X) ]
+
+restriction rs_roles_unique:
+  "All s #i #j. RS(s) @ #i & RS(s) @ #j ==> #i = #j"
+
+// 'any' is the broad audience (NO_RESOURCE), not a server name.
+restriction rs_name_not_any:
+  "All s #i. RS(s) @ #i ==> not (s = 'any')"
+
+restriction level_valid:
+  "All l #i. Level(l) @ #i ==> l = 'read' | l = 'admin'"
+
+#ifdef NO_AUD
+#else
+restriction rs_checks_audience:
+  "All aud h #t. RSAudCheck(aud, h) @ #t ==> aud = h | aud = 'any'"
+#endif
+
+/* The user: approves exactly the (resource, scope) pairs it intends. */
+
+rule User_Intends:
+    [ ]
+  --[ Intends($U, $R, $l), Level($l) ]->
+    [ !UserIntent($U, $R, $l) ]
+
+/* Client: requests of an authorization for (resource, scope). */
+
+// Honest server H challenges for a level the user's operation needs
+// (403 insufficient_scope; its challenge is folded into this request).
+rule Request_Honest:
+    [ !HonestRS($H), !UserIntent($U, $H, $l) ]
+  --[ Requested($U, $H, $l) ]->
+    [ AuthzReq($U, $H, $l), !Wanted($U, $l) ]
+
+// Malicious server M challenges for any level; the client treats it as
+// authoritative.
+rule Request_Challenged_By_Dishonest:
+    [ !DishonestRS($M) ]
+  --[ Requested($U, $M, $l), Level($l) ]->
+    [ AuthzReq($U, $M, $l), !Wanted($U, $l) ]
+
+#ifdef UNION_ACROSS_RESOURCES
+// Client-wide union: the request for H also carries a level wanted for any
+// other resource (while the user is doing some operation at H).
+rule Request_Union_Across_Resources:
+    [ !HonestRS($H), !UserIntent($U, $H, $lo), !Wanted($U, $l) ]
+  --[ Requested($U, $H, $l) ]->
+    [ AuthzReq($U, $H, $l) ]
+#endif
+
+/* The AS. */
+
+// Consent screen shows (resource, scope); the user approves what it intends.
+#ifdef CONSENT_NOT_RESOURCE_BOUND
+// The AS also remembers the consent per scope name only.
+rule AS_Issue_Prompted:
+    [ AuthzReq($U, $R, $l), !UserIntent($U, $R, $l), Fr(~t) ]
+  --[ IssuedScope($U, $R, $l), TokenIssued(~t, $U, audof($R), $l) ]->
+    [ !Token(~t, $U, audof($R), $l), Delivery($R, ~t), !ScopeConsent($U, $l) ]
+#else
+rule AS_Issue_Prompted:
+    [ AuthzReq($U, $R, $l), !UserIntent($U, $R, $l), Fr(~t) ]
+  --[ IssuedScope($U, $R, $l), TokenIssued(~t, $U, audof($R), $l) ]->
+    [ !Token(~t, $U, audof($R), $l), Delivery($R, ~t) ]
+#endif
+
+#ifdef CONSENT_NOT_RESOURCE_BOUND
+// Consent was recorded per scope name: no screen for another resource.
+rule AS_Issue_From_Scope_Consent:
+    [ AuthzReq($U, $R, $l), !ScopeConsent($U, $l), Fr(~t) ]
+  --[ IssuedScope($U, $R, $l), TokenIssued(~t, $U, audof($R), $l) ]->
+    [ !Token(~t, $U, audof($R), $l), Delivery($R, ~t) ]
+#endif
+
+/* Token delivery. */
+
+rule Deliver_To_Dishonest:
+    [ Delivery($M, t), !DishonestRS($M) ]
+  --[ ]->
+    [ Out(t) ]
+
+rule Deliver_To_Honest:
+    [ Delivery($H, t), !HonestRS($H) ]
+  --[ ]->
+    [ ToRS($H, t) ]
+
+/* The honest MCP server. */
+
+rule RS_From_Client:
+    [ ToRS($H, t), !Token(t, u, aud, l), !HonestRS($H) ]
+  --[ RSAudCheck(aud, $H), RSAccepts($H, u, t, l) ]->
+    [ ]
+
+// Anyone can present a token it holds.
+rule RS_From_Network:
+    [ In(t), !Token(t, u, aud, l), !HonestRS($H) ]
+  --[ RSAudCheck(aud, $H), RSAccepts($H, u, t, l) ]->
+    [ ]
+
+/* Lemmas */
+
+// Honest step-up completes: read token, then admin token, at the honest server.
+lemma executable:
+  exists-trace
+  "Ex h u t1 t2 #i #j. RSAccepts(h, u, t1, 'read') @ #i
+     & RSAccepts(h, u, t2, 'admin') @ #j & #i < #j
+     & not (Ex x #k. Server_Dishonest(x) @ #k)"
+
+// P13: the honest MCP server accepts a scope only if the user approved it
+// for that server.
+lemma rs_accepts_only_approved_scope:
+  "All h u t l #i. RSAccepts(h, u, t, l) @ #i ==> Ex #j. Intends(u, h, l) @ #j"
+
+// P13b: the AS issues a scope for a resource only if the user approved it
+// for that resource.
+lemma as_issues_only_intended_scope:
+  "All u r l #i. IssuedScope(u, r, l) @ #i ==> Ex #j. Intends(u, r, l) @ #j"
+
+end

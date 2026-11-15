@@ -1,6 +1,6 @@
 # Results
 
-*All models last checked 14 Nov 2026 with Tamarin 1.12.0 and Maude 3.5.1 (local WSL run; CI runs the same script).* `scripts/prove.sh` (and CI) checks every expectation automatically: **295/295 pass** (135 security-property results, 160 helper or sanity lemmas) across 8 models, with no well-formedness warnings, in about 60 minutes locally with `JOBS=4`. Every combination of removed checks is in [ablation.md](ablation.md). The full Tamarin output is saved in `results/` and uploaded as a CI artifact. Property numbers (P1–P12) are the same in every model; see [flow.md](flow.md) §3.
+*All models last checked 14 Nov 2026 with Tamarin 1.12.0 and Maude 3.5.1 (local WSL run; CI runs the same script).* `scripts/prove.sh` (and CI) checks every expectation automatically: **376/376 pass** (188 security-property results, 188 helper or sanity lemmas) across 9 models, with no well-formedness warnings, in about 60 minutes locally with `JOBS=4`. Every combination of removed checks is in [ablation.md](ablation.md). The full Tamarin output is saved in `results/` and uploaded as a CI artifact. Property numbers (P1–P12) are the same in every model; see [flow.md](flow.md) §3.
 
 ### Model 01: credential binding (revised 14 Nov 2026)
 
@@ -111,6 +111,20 @@ P9 = `downstream_only_via_server`, P2 = `server_accepts_only_own_tokens`.
 | `D_NO_AUD` | ✅ | ❌ falsified (6) | ✅ | R15 |
 | `PASSTHROUGH` + `D_NO_AUD` | ✅ | ❌ falsified (6) | ✅ | R15 |
 | all three | ✅ | ❌ falsified (6) | ❌ falsified (6) | R15 |
+
+### Model 09: scope step-up (15 Nov 2026)
+
+P13 = `rs_accepts_only_approved_scope`, P13b = `as_issues_only_intended_scope`. A malicious server M may challenge any level and the client follows it. 16 subsets decided (all verified or falsified), longest 41 s.
+
+| Variant (check removed) | executable | P13 | P13b | Write-up |
+|---|---|---|---|---|
+| fixed | ✅ | ✅ (22) | ✅ (8) | |
+| `NO_AUD` | ✅ | ❌ falsified (7) | ✅ | R16 |
+| `NO_RESOURCE` | ✅ | ❌ falsified (8) | ✅ | R16 |
+| `CONSENT_NOT_RESOURCE_BOUND` | ✅ | ✅ (54) | ❌ falsified (6) | R16 |
+| `UNION_ACROSS_RESOURCES` | ✅ | ✅ (70) | ✅ (26) | R16 |
+| `CONSENT_NOT_RESOURCE_BOUND` + `UNION_ACROSS_RESOURCES` | ✅ | ❌ falsified (9) | ❌ falsified (6) | R16 |
+| every other combination | ✅ | ❌ iff `NO_AUD`, `NO_RESOURCE` or both consent flags | ❌ iff `CONSENT_NOT_RESOURCE_BOUND` | R16 |
 
 ## Findings and open questions
 
@@ -228,7 +242,15 @@ The variant table shows which checks are needed for which client. For a **public
 - **Model + lemmas:** 08. With the downstream API checking `aud`, a passthrough server cannot work at all (`executable` fails). Passthrough needs `D_NO_AUD`, and with `D_NO_AUD` (passthrough or not) a token a client gave to a malicious MCP server is used directly at the downstream API, which acts for the user without the honest MCP server's decision (P9 falsified, 6 steps). The MCP server's own audience check protects a different property (P2; `S_NO_AUD` falsifies it, as in model 02 `NO_AUD`) and does not affect P9.
 - **What the specs say:** the MCP Security Best Practices list "Security Control Circumvention" as a passthrough risk and forbid passthrough; MCP Token Handling requires audience validation at the MCP server.
 - **Is it new?** No. It restates the spec's rationale as a machine-checked statement: the check that stops circumvention is the downstream API's audience check, and passthrough is exactly the design that needs that check turned off.
-- **Scope step-up (W3c) was not modelled separately.** By reading the spec: the client treats a challenged `scope` as authoritative, but the resulting token is still audience-bound to the server that challenged it (RFC 8707). A malicious server can make the client ask for broad scopes, but the token is only useful at that server unless audience binding fails, which is P2/P3 of models 02 and 08. This is an argument, not a proof.
+- **Scope step-up:** now modelled in model 09 (R16). The argument above is confirmed, with one correction: consent that is not bound to the resource is a second barrier besides audience binding.
+
+### R16 (15 Nov 2026): scope step-up is audience binding plus per-resource consent; a union across resources is only dangerous with a consent cache
+- **Model + lemmas:** 09, P13 and P13b. With the fixed checks, a malicious MCP server that challenges for `admin` gets, at most, an `admin` token for itself: the honest server never accepts a scope the user did not approve for it (P13 verified), and the AS issues only approved (resource, scope) pairs (P13b verified). Even the client that keeps one scope union across all resources (`UNION_ACROSS_RESOURCES`) is safe as long as the consent screen is per (resource, scope): the request for the honest server carries `admin`, the user sees `admin` for the honest server and declines.
+- **What breaks it:** (a) no audience check at the honest server (`NO_AUD`, P13 falsified in 7 steps) or an AS that ignores `resource` (`NO_RESOURCE`, 8 steps): the token the user approved for the malicious server is replayed at the honest one. This is model 02's audience result again, now reached through scope challenges. (b) Consent remembered per scope name (`CONSENT_NOT_RESOURCE_BOUND`) together with a client that carries the union across resources: the consent the user gave `admin` at M silently covers `admin` at H (P13 falsified in 9 steps, P13b in 6).
+- **Something the model also shows:** `CONSENT_NOT_RESOURCE_BOUND` alone falsifies P13b (6 steps) even with an honest client union: consent given for `admin` at the honest server lets M obtain an `admin` token for itself without a screen. This does not hurt the honest server (P13 still holds) but it is a consent-confusion on the user's side. P13b's ground truth is the user's intention per resource.
+- **What the specs say:** MCP treats challenged scopes as authoritative and requires the union on step-up, and RFC 8707 plus MCP Token Handling bind tokens to an audience; the spec does not say how consent is recorded (per resource or per scope name), so the consent flags are choices the spec leaves open, not spec violations. Both official SDKs implement the union; whether either one sends it across resources was not checked here.
+- **Is it new?** No. It confirms the R15 argument and does not add an attack: the only path to an honest server goes through broken audience binding (known, model 02, GHSA-w4fh-qvv9-3v23 / GHSA-rvq5-wwqv-78pq class) or through consent that is not bound to the resource (the confused-deputy consent issue in the MCP Security Best Practices and model 07). The model's addition is the machine-checked statement that nothing else in the step-up rules (authoritative challenge, union) is needed to reach that conclusion, and that the union across resources alone is harmless.
+- **R15 informal argument: confirmed, with one correction.** "A malicious server can make the client ask for broad scopes, but the token is only useful at that server unless audience binding fails (P2/P3)" is confirmed: `NO_AUD` and `NO_RESOURCE` are the only single failures. It was incomplete in one respect: the consent record is a second barrier. Audience binding alone is not enough if the AS skips the consent screen based on the scope name, because then a union across resources yields a token for the honest server with a scope the user never approved for it. Suggested wording to replace the last bullet of R15: "Scope step-up is modelled in model 09 (R16)."
 
 ## Modelling notes
 

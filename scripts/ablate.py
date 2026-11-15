@@ -58,6 +58,9 @@ MODELS = {
     "08": dict(file="models/08_token_passthrough.spthy", contexts=[()],
                flags=["S_NO_AUD", "PASSTHROUGH", "D_NO_AUD"],
                props=["downstream_only_via_server", "server_accepts_only_own_tokens"]),
+    "09": dict(file="models/09_scope_step_up.spthy", contexts=[()],
+               flags=["NO_AUD", "NO_RESOURCE", "CONSENT_NOT_RESOURCE_BOUND", "UNION_ACROSS_RESOURCES"],
+               props=["rs_accepts_only_approved_scope", "as_issues_only_intended_scope"]),
 }
 
 LINE = re.compile(r"^\s*([A-Za-z0-9_]+) \((all-traces|exists-trace)\): (.*)$")
