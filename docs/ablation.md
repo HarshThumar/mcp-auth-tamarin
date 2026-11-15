@@ -4,9 +4,9 @@
 
 Each model is run once for **every subset of its removable checks** (one flag = one check). A cell is the result of a property with that subset removed: ✅ proved, ❌ attack found, ❌ᵃ attack found with an exists-trace attack lemma (reduced model, see results.md R8), ∅ no attack in the reduced model (not a proof), ✅ʳ proved only in the reduced model (attacker clients left out; not a proof for the full model, counted as undecided), ⏱ timeout (no result; the cap is stated), ? missing. A row marked **vacuous** is one where the honest protocol cannot run (`executable` fails), so a ✅ there means nothing.
 
-**Tests:** 180 cells agree with `scripts/prove.sh`; 1849 subset pairs checked for monotonicity; 0 problem(s). 4 vacuous cell(s) left out of the monotonicity test (a flag that changes behaviour, rather than removing a check, can make the honest run impossible).
+**Tests:** 255 cells agree with `scripts/prove.sh`; 1904 subset pairs checked for monotonicity; 0 problem(s). 4 vacuous cell(s) left out of the monotonicity test (a flag that changes behaviour, rather than removing a check, can make the honest run impossible).
 
-**Coverage:** 522 of 532 property cells decided (98 %).
+**Coverage:** 554 of 564 property cells decided (98 %).
 
 ## Model 01
 
@@ -304,3 +304,31 @@ Checks: SAUD = MCP server checks `aud` (`S_NO_AUD` removes it), XCHG = server ex
 
 - P9 `downstream_only_via_server` holds iff **DAUD ∧ XCHG** (necessary: DAUD, XCHG)
 - P2 `server_accepts_only_own_tokens` holds iff **SAUD** (necessary: SAUD)
+
+## Model 09
+
+Checks: AUD = RS audience check (`NO_AUD` removes it), RES = AS honours `resource` (`NO_RESOURCE` removes it), CRB = consent bound to (resource, scope) (`CONSENT_NOT_RESOURCE_BOUND` removes it), UPR = client keeps the scope union per resource (`UNION_ACROSS_RESOURCES` removes it)
+
+| Removed checks | P13 `rs_accepts_only_approved_scope` | P13b `as_issues_only_intended_scope` | s |
+|---|---|---|---|
+| none (all checks on) | ✅ | ✅ | 0 |
+| CRB | ✅ | ❌ | 1 |
+| AUD | ❌ | ✅ | 0 |
+| RES | ❌ | ✅ | 0 |
+| UPR | ✅ | ✅ | 1 |
+| CRB, UPR | ❌ | ❌ | 45 |
+| AUD, CRB | ❌ | ❌ | 1 |
+| AUD, RES | ❌ | ✅ | 0 |
+| AUD, UPR | ❌ | ✅ | 1 |
+| RES, CRB | ❌ | ❌ | 2 |
+| RES, UPR | ❌ | ✅ | 2 |
+| AUD, CRB, UPR | ❌ | ❌ | 22 |
+| AUD, RES, CRB | ❌ | ❌ | 2 |
+| AUD, RES, UPR | ❌ | ✅ | 1 |
+| RES, CRB, UPR | ❌ | ❌ | 42 |
+| AUD, RES, CRB, UPR | ❌ | ❌ | 20 |
+
+**What is enough** (minimal sets of kept checks that make the property hold; non-vacuous proved cells only):
+
+- P13 `rs_accepts_only_approved_scope` holds iff **(CRB ∧ AUD ∧ RES) ∨ (AUD ∧ RES ∧ UPR)** (necessary: AUD, RES)
+- P13b `as_issues_only_intended_scope` holds iff **CRB** (necessary: CRB)
