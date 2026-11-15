@@ -7,369 +7,392 @@
   <meta name="description" content="A machine-checked formal analysis of Model Context Protocol authorization in Tamarin, an ablation lattice of security checks, and a case study on UPI-style agent payments.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'neutral',
+      fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
+      securityLevel: 'loose'
+    });
+  </script>
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    :root {
-      --bg0: #04060f;
-      --bg1: #080d1a;
-      --bg2: #0d1527;
-      --surface: rgba(255, 255, 255, 0.035);
-      --surface2: rgba(255, 255, 255, 0.065);
-      --border: rgba(255, 255, 255, 0.09);
-      --border-h: rgba(79, 156, 249, 0.35);
-      --blue: #4f9cf9;
-      --cyan: #22d3ee;
-      --purple: #a78bfa;
-      --pink: #f472b6;
-      --green: #34d399;
-      --amber: #fbbf24;
-      --red: #f87171;
-      --text: #f8fafc;
-      --muted: #94a3b8;
-      --dim: #64748b;
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
     }
 
-    html { scroll-behavior: smooth; }
     body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-      background: var(--bg0);
-      color: var(--text);
-      line-height: 1.7;
-      overflow-x: hidden;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: #ffffff;
+      color: #1f2937;
+      line-height: 1.75;
+      font-size: 1.0625rem;
       -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
     }
 
-    /* Ambient glow background */
-    .ambient-glow {
-      position: fixed; inset: 0; z-index: 0; pointer-events: none;
-      background:
-        radial-gradient(ellipse 900px 500px at 50% -100px, rgba(79,156,249,0.14) 0%, transparent 70%),
-        radial-gradient(ellipse 700px 400px at 15% 50%, rgba(167,139,250,0.08) 0%, transparent 60%),
-        radial-gradient(ellipse 700px 400px at 85% 70%, rgba(34,211,238,0.07) 0%, transparent 60%);
+    /* Top navigation bar */
+    .top-nav {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background-color: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid #e5e7eb;
     }
 
-    /* Reading Progress Bar */
-    #progress {
-      position: fixed; top: 0; left: 0; height: 3px;
-      background: linear-gradient(90deg, var(--blue), var(--cyan), var(--purple));
-      width: 0%; z-index: 100; transition: width 0.1s;
+    .top-nav-inner {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
     }
 
-    /* Top Nav */
-    header.nav-bar {
-      position: sticky; top: 0; z-index: 50;
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      background: rgba(4, 6, 15, 0.75);
-      border-bottom: 1px solid var(--border);
-    }
-    .nav-inner {
-      max-width: 960px; margin: 0 auto; padding: 14px 24px;
-      display: flex; justify-content: space-between; align-items: center;
-    }
-    .nav-brand {
-      display: flex; align-items: center; gap: 10px;
-      font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 0.9rem;
-      color: var(--text); text-decoration: none;
-    }
-    .brand-pill {
-      font-size: 11px; padding: 3px 8px; border-radius: 999px;
-      background: rgba(79, 156, 249, 0.15); color: var(--blue); border: 1px solid rgba(79, 156, 249, 0.3);
-    }
-    .nav-links { display: flex; gap: 16px; align-items: center; }
-    .nav-link {
-      font-size: 0.85rem; color: var(--muted); text-decoration: none;
-      transition: color 0.2s; font-weight: 500;
-    }
-    .nav-link:hover { color: #fff; }
-    .nav-btn {
-      display: inline-flex; align-items: center; gap: 6px;
-      padding: 6px 14px; border-radius: 8px; font-size: 0.8rem; font-weight: 600;
-      background: var(--surface2); color: var(--text); text-decoration: none;
-      border: 1px solid var(--border); transition: all 0.2s;
-    }
-    .nav-btn:hover { border-color: var(--blue); color: var(--blue); transform: translateY(-1px); }
-
-    /* Main Container */
-    main.article-wrap {
-      position: relative; z-index: 1;
-      max-width: 840px; margin: 0 auto; padding: 60px 24px 120px;
+    .brand-link {
+      font-weight: 600;
+      font-size: 0.95rem;
+      color: #111827;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
     }
 
-    /* Hero Header */
-    .post-header { margin-bottom: 54px; text-align: left; }
-    .meta-pills { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 22px; }
-    .pill {
-      font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
-      padding: 4px 12px; border-radius: 999px;
+    .nav-links {
+      display: flex;
+      gap: 20px;
+      list-style: none;
+      font-size: 0.875rem;
     }
-    .pill-blue { background: rgba(79, 156, 249, 0.12); color: var(--blue); border: 1px solid rgba(79, 156, 249, 0.25); }
-    .pill-purple { background: rgba(167, 139, 250, 0.12); color: var(--purple); border: 1px solid rgba(167, 139, 250, 0.25); }
-    .pill-green { background: rgba(52, 211, 153, 0.12); color: var(--green); border: 1px solid rgba(52, 211, 153, 0.25); }
 
-    h1.post-title {
-      font-size: clamp(2rem, 4.2vw, 3rem);
-      font-weight: 800; line-height: 1.18; letter-spacing: -0.03em;
+    .nav-links a {
+      color: #4b5563;
+      text-decoration: none;
+      font-weight: 500;
+      transition: color 0.15s ease;
+    }
+
+    .nav-links a:hover {
+      color: #111827;
+    }
+
+    /* Article layout */
+    .article-container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 48px 24px 96px;
+    }
+
+    header {
+      margin-bottom: 40px;
+      padding-bottom: 28px;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    .article-tag {
+      display: inline-block;
+      font-size: 0.8125rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #2563eb;
+      margin-bottom: 12px;
+    }
+
+    h1 {
+      font-size: 2.375rem;
+      font-weight: 700;
+      line-height: 1.25;
+      color: #111827;
+      letter-spacing: -0.02em;
+      margin-bottom: 16px;
+    }
+
+    .subtitle {
+      font-size: 1.1875rem;
+      color: #4b5563;
+      line-height: 1.5;
+      font-weight: 400;
+      margin-bottom: 24px;
+    }
+
+    .byline {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 16px;
+      font-size: 0.875rem;
+      color: #6b7280;
+    }
+
+    .byline-author {
+      font-weight: 600;
+      color: #111827;
+    }
+
+    .byline-dot {
+      color: #d1d5db;
+    }
+
+    /* Content styling */
+    h2 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #111827;
+      letter-spacing: -0.015em;
+      margin-top: 48px;
       margin-bottom: 18px;
-      background: linear-gradient(135deg, #ffffff 40%, #94a3b8 100%);
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #f3f4f6;
     }
-    p.post-subtitle {
-      font-size: 1.15rem; color: var(--muted); line-height: 1.6;
-      margin-bottom: 30px; font-weight: 400;
-    }
-    .author-card {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 16px 20px; border-radius: 14px;
-      background: var(--surface); border: 1px solid var(--border);
-    }
-    .author-left { display: flex; align-items: center; gap: 14px; }
-    .author-avatar {
-      width: 44px; height: 44px; border-radius: 50%;
-      background: linear-gradient(135deg, var(--blue), var(--purple));
-      display: flex; align-items: center; justify-content: center;
-      font-weight: 800; font-size: 1rem; color: #fff;
-    }
-    .author-info h4 { font-size: 0.95rem; font-weight: 700; color: #fff; }
-    .author-info p { font-size: 0.8rem; color: var(--dim); margin-top: 2px; }
-    .reading-meta { font-size: 0.8rem; color: var(--muted); font-family: 'JetBrains Mono', monospace; }
 
-    /* Typography & Content */
-    article.content h2 {
-      font-size: 1.7rem; font-weight: 800; letter-spacing: -0.02em;
-      margin: 54px 0 20px; color: #fff;
-      display: flex; align-items: center; gap: 10px;
+    p {
+      margin-bottom: 20px;
+      color: #374151;
     }
-    article.content h2::before {
-      content: ''; display: inline-block; width: 4px; height: 1.1em;
-      background: linear-gradient(180deg, var(--blue), var(--cyan));
-      border-radius: 4px;
-    }
-    article.content h3 {
-      font-size: 1.25rem; font-weight: 700; margin: 32px 0 14px; color: #f1f5f9;
-    }
-    article.content p {
-      font-size: 1.02rem; color: #cbd5e1; margin-bottom: 22px; line-height: 1.78;
-    }
-    article.content ul, article.content ol {
-      margin: 0 0 26px 24px; color: #cbd5e1;
-    }
-    article.content li { margin-bottom: 10px; line-height: 1.7; }
-    article.content strong { color: #fff; font-weight: 700; }
-    article.content a {
-      color: var(--blue); text-decoration: none; border-bottom: 1px dotted rgba(79, 156, 249, 0.4);
-      transition: all 0.2s;
-    }
-    article.content a:hover { color: var(--cyan); border-bottom-color: var(--cyan); }
 
-    /* Callout Alerts (GitHub / Modern style) */
-    .callout {
-      margin: 28px 0; padding: 20px 24px; border-radius: 14px;
-      position: relative; overflow: hidden;
-      border: 1px solid;
+    ul, ol {
+      margin-top: 8px;
+      margin-bottom: 24px;
+      padding-left: 28px;
     }
-    .callout-header {
-      display: flex; align-items: center; gap: 8px; font-weight: 700;
-      font-size: 0.88rem; text-transform: uppercase; letter-spacing: 0.06em;
+
+    li {
       margin-bottom: 8px;
+      color: #374151;
     }
-    .callout-important {
-      background: rgba(244, 114, 182, 0.05);
-      border-color: rgba(244, 114, 182, 0.3);
-      color: #fce7f3;
-    }
-    .callout-important .callout-header { color: var(--pink); }
-    .callout-note {
-      background: rgba(79, 156, 249, 0.05);
-      border-color: rgba(79, 156, 249, 0.3);
-      color: #e0f2fe;
-    }
-    .callout-note .callout-header { color: var(--blue); }
-    .callout-tip {
-      background: rgba(52, 211, 153, 0.05);
-      border-color: rgba(52, 211, 153, 0.3);
-      color: #ecfdf5;
-    }
-    .callout-tip .callout-header { color: var(--green); }
-    .callout p { margin: 0; font-size: 0.95rem; color: inherit; }
 
-    /* Diagram Containers */
-    .diagram-card {
-      margin: 32px 0; padding: 24px; border-radius: 16px;
-      background: var(--bg1); border: 1px solid var(--border);
-      box-shadow: 0 10px 30px -10px rgba(0,0,0,0.5);
+    strong {
+      color: #111827;
+      font-weight: 600;
     }
+
+    a {
+      color: #2563eb;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      transition: color 0.15s ease;
+    }
+
+    a:hover {
+      color: #1d4ed8;
+    }
+
+    /* Callout */
+    .callout {
+      background-color: #f8fafc;
+      border-left: 4px solid #2563eb;
+      padding: 16px 20px;
+      border-radius: 0 6px 6px 0;
+      margin: 28px 0;
+      color: #334155;
+      font-size: 0.95rem;
+    }
+
+    .callout p:last-child {
+      margin-bottom: 0;
+    }
+
+    /* Code and Pre */
+    code {
+      font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.875em;
+      background-color: #f3f4f6;
+      color: #111827;
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid #e5e7eb;
+    }
+
+    pre {
+      background-color: #0f172a;
+      color: #f8fafc;
+      padding: 18px 22px;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-size: 0.875rem;
+      line-height: 1.6;
+      margin: 24px 0;
+    }
+
+    pre code {
+      background-color: transparent;
+      color: inherit;
+      padding: 0;
+      border: none;
+      border-radius: 0;
+    }
+
+    /* Diagram wrapper */
+    .diagram-wrapper {
+      margin: 32px 0;
+      padding: 24px;
+      background-color: #fafafa;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      overflow-x: auto;
+    }
+
     .diagram-caption {
-      font-family: 'JetBrains Mono', monospace; font-size: 0.75rem;
-      color: var(--dim); text-align: center; margin-top: 14px; text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }
-    .mermaid {
-      display: flex; justify-content: center;
-      background: transparent !important;
+      margin-top: 12px;
+      font-size: 0.8125rem;
+      color: #6b7280;
+      text-align: center;
     }
 
     /* Tables */
-    .table-container {
-      margin: 30px 0; overflow-x: auto; border-radius: 14px;
-      border: 1px solid var(--border); background: var(--surface);
+    .table-wrapper {
+      overflow-x: auto;
+      margin: 28px 0;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
     }
+
     table {
-      width: 100%; border-collapse: collapse; text-align: left; font-size: 0.92rem;
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+      text-align: left;
     }
+
+    thead {
+      background-color: #f9fafb;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
     th {
-      background: var(--surface2); color: #fff; font-weight: 700;
-      padding: 14px 18px; border-bottom: 1px solid var(--border);
-      font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;
+      padding: 12px 16px;
+      font-weight: 600;
+      color: #111827;
+      white-space: nowrap;
     }
+
     td {
-      padding: 14px 18px; border-bottom: 1px solid rgba(255,255,255,0.04);
-      color: #cbd5e1;
+      padding: 12px 16px;
+      color: #374151;
+      border-bottom: 1px solid #f3f4f6;
+      vertical-align: middle;
     }
-    tr:last-child td { border-bottom: none; }
-    tr:hover td { background: rgba(255,255,255,0.02); }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
     .badge-shipped {
-      display: inline-flex; align-items: center; gap: 4px;
-      padding: 3px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 600;
-      background: rgba(52, 211, 153, 0.15); color: var(--green); border: 1px solid rgba(52, 211, 153, 0.3);
+      display: inline-block;
+      padding: 2px 8px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      border-radius: 4px;
+      background-color: #ecfdf5;
+      color: #065f46;
+      border: 1px solid #a7f3d0;
     }
 
-    /* Code Blocks */
-    pre {
-      background: #020409 !important; border: 1px solid var(--border);
-      border-radius: 12px; padding: 18px 20px; margin: 24px 0;
-      overflow-x: auto; position: relative;
-    }
-    code {
-      font-family: 'JetBrains Mono', monospace; font-size: 0.88rem;
-    }
-    :not(pre) > code {
-      background: rgba(255,255,255,0.07); color: #38bdf8;
-      padding: 2px 6px; border-radius: 5px; font-size: 0.85em;
-      border: 1px solid rgba(255,255,255,0.08);
+    /* Divider */
+    hr {
+      border: 0;
+      border-top: 1px solid #e5e7eb;
+      margin: 40px 0;
     }
 
-    /* Mandate Card (UI Mock) */
-    .mandate-box {
-      margin: 28px 0; border-radius: 14px;
-      background: linear-gradient(145deg, #091122, #040814);
-      border: 1px solid rgba(79, 156, 249, 0.3);
-      padding: 24px; position: relative;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    /* Discussion prompt box */
+    .discussion-card {
+      background-color: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 24px;
+      margin: 36px 0;
     }
-    .mandate-header {
-      display: flex; justify-content: space-between; align-items: center;
-      border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 18px;
-    }
-    .mandate-title {
-      font-size: 0.85rem; font-weight: 700; color: var(--cyan);
-      text-transform: uppercase; letter-spacing: 0.08em; display: flex; align-items: center; gap: 8px;
-    }
-    .mandate-grid {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px;
-    }
-    .m-item { font-size: 0.82rem; }
-    .m-label { color: var(--dim); text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.06em; margin-bottom: 2px; }
-    .m-val { color: #f8fafc; font-family: 'JetBrains Mono', monospace; font-weight: 600; }
 
-    /* Footer & Links */
-    footer.post-footer {
-      margin-top: 80px; padding-top: 40px; border-top: 1px solid var(--border);
+    .discussion-card h3 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: #111827;
+      margin-bottom: 8px;
     }
-    .links-grid {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; margin-top: 20px;
-    }
-    .resource-card {
-      padding: 16px; border-radius: 12px;
-      background: var(--surface); border: 1px solid var(--border);
-      text-decoration: none; display: flex; flex-direction: column; gap: 4px;
-      transition: all 0.2s;
-    }
-    .resource-card:hover {
-      border-color: var(--blue); background: var(--surface2); transform: translateY(-2px);
-    }
-    .res-title { font-size: 0.9rem; font-weight: 700; color: #fff; }
-    .res-desc { font-size: 0.78rem; color: var(--muted); }
 
-    @media (max-width: 640px) {
-      .author-card { flex-direction: column; align-items: flex-start; gap: 12px; }
+    .discussion-card p {
+      margin-bottom: 0;
+      color: #4b5563;
+      font-size: 0.95rem;
+    }
+
+    /* Footer */
+    footer {
+      margin-top: 64px;
+      padding-top: 24px;
+      border-top: 1px solid #e5e7eb;
+      font-size: 0.875rem;
+      color: #6b7280;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
     }
   </style>
 </head>
 <body>
-  <div class="ambient-glow"></div>
-  <div id="progress"></div>
 
-  <!-- Nav -->
-  <header class="nav-bar">
-    <div class="nav-inner">
-      <a href="https://github.com/HarshThumar/mcp-auth-tamarin" class="nav-brand">
-        mcp-auth-tamarin <span class="brand-pill">IETF 127</span>
+  <nav class="top-nav">
+    <div class="top-nav-inner">
+      <a href="https://github.com/HarshThumar/mcp-auth-tamarin" class="brand-link">
+        mcp-auth-tamarin
       </a>
-      <div class="nav-links">
-        <a href="https://github.com/HarshThumar/mcp-auth-tamarin/blob/main/docs/results.md" class="nav-link">Results</a>
-        <a href="https://github.com/HarshThumar/mcp-auth-tamarin/blob/main/docs/ablation.md" class="nav-link">Ablation</a>
-        <a href="https://github.com/HarshThumar/mcp-auth-tamarin" class="nav-btn" target="_blank" rel="noopener">
-          GitHub Repo ↗
-        </a>
-      </div>
+      <ul class="nav-links">
+        <li><a href="https://github.com/HarshThumar/mcp-auth-tamarin">Repository</a></li>
+        <li><a href="https://github.com/HarshThumar/mcp-auth-tamarin/blob/main/docs/ablation.md">Ablation Lattice</a></li>
+        <li><a href="https://github.com/HarshThumar/mcp-auth-tamarin/blob/main/whitepaper/agent-payments-india.md">Whitepaper</a></li>
+      </ul>
     </div>
-  </header>
+  </nav>
 
-  <!-- Main Article -->
-  <main class="article-wrap">
-    <header class="post-header">
-      <div class="meta-pills">
-        <span class="pill pill-blue">Formal Methods</span>
-        <span class="pill pill-purple">Tamarin Prover</span>
-        <span class="pill pill-green">OAuth 2.1 Security</span>
-      </div>
-      <h1 class="post-title">Proving MCP Authorization: What We Modeled, What We Rediscovered, and Why Every Check Matters</h1>
-      <p class="post-subtitle">A machine-checked formal analysis of Model Context Protocol authorization in Tamarin, an ablation lattice of security checks, and a case study on UPI-style agent payments.</p>
-      
-      <div class="author-card">
-        <div class="author-left">
-          <div class="author-avatar">HT</div>
-          <div class="author-info">
-            <h4>Harsh Thumar</h4>
-            <p>remote participant, IETF 127 · independent researcher</p>
-          </div>
+  <main class="article-container">
+    <article>
+      <header>
+        <span class="article-tag">Formal Verification &middot; Protocol Security</span>
+        <h1>Proving MCP Authorization: What We Modeled, What We Rediscovered, and Why Every Check Matters</h1>
+        <p class="subtitle">A machine-checked formal analysis of Model Context Protocol authorization in Tamarin, an ablation lattice of security checks, and a case study on UPI-style agent payments.</p>
+        <div class="byline">
+          <span class="byline-author">Harsh Thumar</span>
+          <span class="byline-dot">&middot;</span>
+          <span>Remote Participant, IETF 127</span>
+          <span class="byline-dot">&middot;</span>
+          <span>Independent Researcher</span>
+          <span class="byline-dot">&middot;</span>
+          <time datetime="2026-11-15">November 15, 2026</time>
         </div>
-        <div class="reading-meta">15 Nov 2026 · 7 min read</div>
-      </div>
-    </header>
+      </header>
 
-    <article class="content">
-      <h2>The question</h2>
-      <p>AI agents are shifting from conversational assistants into autonomous systems that take real-world actions on behalf of users: querying sensitive APIs, orchestrating tools, and initiating financial transactions. The Model Context Protocol (MCP) has emerged as an open standard connecting clients and LLMs to external tools and resources. But in MCP authorization—built on OAuth 2.1 foundations—there is an essential architectural twist: an untrusted resource server (the MCP server) that a client connects to directs the client to an Authorization Server (RFC 9728).</p>
-
-      <p>If an agent connects to an untrusted MCP server, what prevents that server from misdirecting the client, hijacking credentials, stealing tokens, or escalating authorization scopes? Can we mathematically <em>prove</em> that client and server defenses hold together under adversarial network conditions?</p>
-
-      <div class="callout callout-important">
-        <div class="callout-header">⚠️ The Threat Inversion</div>
-        <p>In traditional OAuth, a human navigates to an authorization server they know and trust. In MCP, the tool provider specifies the authorization server. If metadata validation or audience verification is skipped, every downstream security invariant collapses.</p>
+      <div class="callout">
+        <p><strong>Artifact Summary:</strong> All models (01 through 09), 376 continuous lemma checks, and ablation proofs are published under the MIT license in the public repository at <a href="https://github.com/HarshThumar/mcp-auth-tamarin">github.com/HarshThumar/mcp-auth-tamarin</a>.</p>
       </div>
 
-      <div class="diagram-card">
-        <div class="mermaid">
+      <section>
+        <h2>The question</h2>
+        <p>When an AI agent connects to a local or remote tool via the Model Context Protocol (MCP), it relies on OAuth 2.1 to authorize requests. But MCP introduces an inversion of traditional OAuth assumptions: the resource server (the MCP tool server itself) is the entity that directs the client to an Authorization Server (RFC 9728). If that MCP server is untrusted, compromised, or malicious, what prevents it from pointing the client to a rogue authorization server, harvesting client credentials, or tricking the client into replaying tokens across different tools?</p>
+        <p>In production SDKs, multiple defenses are layered to prevent these failures: metadata issuer validation, client credential isolation, PKCE, authorization response issuer checks (<code>iss</code>), and resource-server audience validation. The practical engineering question is: can we prove that these defenses are sufficient, and what happens if an implementation omits or misconfigures one of them?</p>
+
+        <div class="diagram-wrapper">
+          <pre class="mermaid">
 sequenceDiagram
     autonumber
-    actor User as 👤 User / Principal
-    participant Client as 🤖 MCP Client (Host / Agent)
-    participant RS as ⚠️ MCP Server (Untrusted Tool)
-    participant AS as 🏛️ Authorization Server (RFC 8414)
+    actor User as User / Principal
+    participant Client as MCP Client (Host / Agent)
+    participant RS as MCP Server (Untrusted Tool)
+    participant AS as Authorization Server (RFC 8414)
 
     Note over Client,RS: 1. Discovery Phase
     Client->>RS: Connect (tools/list)
-    RS-->>Client: HTTP 401 + Resource Metadata (RFC 9728)<br/>Points to AS: https://as.example
+    RS-->>Client: HTTP 401 + Protected Resource Metadata (RFC 9728)<br/>Points to AS: https://as.example
 
     Note over Client,AS: 2. Authorization & Credential Isolation
-    rect rgb(35, 25, 10)
-    Note right of Client: ⚠️ Attack without Issuer Binding:<br/>Attacker RS points client to Rogue AS<br/>Leaking stored client credentials (GHSA-qx49)
-    end
     Client->>AS: /authorize (PKCE + RFC 8707 Resource)
     AS-->>User: Consent Screen (Payee, Scope, Resource)
     User-->>AS: User Approves
@@ -378,234 +401,177 @@ sequenceDiagram
     Note over Client,RS: 3. Token Exchange & Audience Enforcement
     Client->>AS: /token (Redeem Code + PKCE Verifier)
     AS-->>Client: Access Token (aud = MCP Server)
-    rect rgb(35, 15, 15)
-    Note right of Client: ⚠️ Attack without Audience Check:<br/>Token minted for Server A replayed at Server B<br/>(GHSA-w4fh / GHSA-rvq5)
-    end
     Client->>RS: tools/call (Bearer Token)
     RS-->>Client: Tool Result
+          </pre>
+          <div class="diagram-caption">Figure 1: MCP authorization architecture showing resource server discovery, authorization code grant, and audience-restricted token exchange.</div>
         </div>
-        <div class="diagram-caption">Figure 1: MCP Discovery, Authorization, and Token Execution Sequence with Vulnerability Exposure Points</div>
-      </div>
+      </section>
 
-      <h2>What we did</h2>
-      <p>To answer this question rigorously, we developed a comprehensive formal specification of MCP authorization using the Tamarin prover, a state-of-the-art symbolic verification tool. Operating under the classical Dolev-Yao threat model, Tamarin evaluates an active network attacker who can intercept, alter, delete, and inject messages, while concurrently operating malicious servers, rogue clients, and compromised user accounts.</p>
+      <section>
+        <h2>What we did</h2>
+        <p>During the IETF 127 Hackathon (14–15 November 2026, remote), we modeled the MCP authorization flow in the Tamarin prover, a symbolic verification tool for cryptographic protocols. Tamarin tests protocols against a standard Dolev-Yao attacker who controls the network—capable of intercepting, rewriting, and injecting traffic—while operating dishonest authorization servers, rogue resource servers, and malicious clients.</p>
+        <p>The repository contains 9 models (<code>models/01</code> through <code>models/09</code>):</p>
+        <ul>
+          <li><strong>Model 01:</strong> Authorization server selection, metadata issuer validation (RFC 8414 Section 3.3), and client credential binding.</li>
+          <li><strong>Model 02:</strong> Authorization code grant with PKCE (RFC 7636), authorization response issuer identification (RFC 9207), resource indicators (RFC 8707), and per-session state.</li>
+          <li><strong>Model 03:</strong> Client ID Metadata Documents (CIMD, draft-ietf-oauth-client-id-metadata-document), where a single client identity and key are used across multiple authorization servers.</li>
+          <li><strong>Model 04:</strong> Identity Assertion Authorization Grants (ID-JAG, draft-ietf-oauth-identity-assertion-authz-grant), modeling RFC 8693 token exchange at an IdP followed by an RFC 7523 JWT bearer grant at an MCP authorization server.</li>
+          <li><strong>Model 05:</strong> Delegated agent payment mandates under rich authorization requests (RFC 9396), DPoP sender-constraints (RFC 9449), and online revocation (RFC 7009).</li>
+          <li><strong>Model 06:</strong> Audience injection defenses for CIMD clients authenticated via <code>private_key_jwt</code> (RFC 7523bis).</li>
+          <li><strong>Model 07:</strong> Confused-deputy protections on MCP proxy servers implementing dynamic client registration.</li>
+          <li><strong>Model 08:</strong> Token passthrough and audience circumvention across intermediary servers and downstream APIs.</li>
+          <li><strong>Model 09:</strong> Server-driven scope step-up handling and resource-bound consent caching.</li>
+        </ul>
+        <p>Across these models, 376 lemma expectations are continuously checked in CI with zero well-formedness warnings.</p>
+      </section>
 
-      <p>Our formal verification base consists of 9 distinct Tamarin models (<code>models/01</code>–<code>models/09</code>):</p>
-      <ul>
-        <li><strong>Model 01:</strong> Authorization server selection, metadata issuer validation (RFC 8414 §3.3), and client credential binding.</li>
-        <li><strong>Model 02:</strong> Authorization code grant with PKCE (RFC 7636), issuer identification (RFC 9207), resource indicators (RFC 8707), and per-session state.</li>
-        <li><strong>Model 03:</strong> Client ID Metadata Documents (CIMD), where a single client identity and signing key are used across multiple authorization servers.</li>
-        <li><strong>Model 04:</strong> Enterprise authorization via Identity Assertion Authorization Grants (ID-JAG), modeling RFC 8693 token exchange followed by an RFC 7523 JWT bearer grant.</li>
-        <li><strong>Model 05:</strong> Delegated AI agent payment mandates under rich authorization requests (RFC 9396), DPoP sender-constraints (RFC 9449), and online revocation (RFC 7009).</li>
-        <li><strong>Model 06:</strong> Audience injection defenses for CIMD clients authenticated via <code>private_key_jwt</code> (RFC 7523bis).</li>
-        <li><strong>Model 07:</strong> Confused-deputy protections on MCP proxy servers implementing dynamic client registration.</li>
-        <li><strong>Model 08:</strong> Token passthrough and audience circumvention across intermediary servers and downstream APIs.</li>
-        <li><strong>Model 09:</strong> Server-driven scope step-up handling and resource-bound consent caching.</li>
-      </ul>
+      <section>
+        <h2>The ablation idea</h2>
+        <p>Most formal protocol analyses only verify a single, fully hardened specification where every defense is enabled. While that shows the protocol can be secure, it does not tell implementers which checks are strictly necessary, which checks are redundant, or what concrete failure mode occurs when a specific check is omitted.</p>
+        <p>To answer this, we computed a complete ablation lattice across the protocol suite (<a href="https://github.com/HarshThumar/mcp-auth-tamarin/blob/main/docs/ablation.md"><code>docs/ablation.md</code></a>). For each model, we systematically disabled security checks one subset at a time (where each preprocessor flag corresponds to one check) and ran the theorem prover across all combinations.</p>
+        <p>With 100% of ablation cells decided, the machine-checked lattice reveals the minimal sufficient check sets for every security property:</p>
+        <ul>
+          <li>It confirms that layered defenses are not arbitrary: each check addresses a specific attack path.</li>
+          <li>It identifies true redundancy pairs (for example, PKCE or <code>state</code> is sufficient for session integrity, but omitting both allows code injection).</li>
+          <li>It proves that omitting any single necessary check yields an executable attack trace in the prover.</li>
+        </ul>
 
-      <p>Across all 9 models, <strong>376 lemma expectations</strong> are continuously checked in CI with zero well-formedness warnings.</p>
-
-      <h2>The ablation idea</h2>
-      <p>Formal proofs often evaluate a protocol only in its "fully hardened" state—with every defensive check active simultaneously. However, software implementers frequently ask pragmatic questions: <em>Is every single check strictly necessary? What happens if an SDK omits one check? Does check A render check B redundant?</em></p>
-
-      <p>To resolve this, we constructed a systematic ablation lattice across the protocol suite, documented in <a href="https://github.com/HarshThumar/mcp-auth-tamarin/blob/main/docs/ablation.md">docs/ablation.md</a>. In an ablation run, we disable security checks one subset at a time (where each preprocessor flag corresponds to one check) and execute the theorem prover across all combinations:</p>
-
-      <ul>
-        <li>Does the property still hold? (<strong>Proved ✅</strong>)</li>
-        <li>Does omitting the check produce a concrete attack trace? (<strong>Falsified ❌</strong>)</li>
-        <li>Does omitting the check prevent honest runs from completing? (<strong>Vacuous</strong>)</li>
-      </ul>
-
-      <p>With <strong>100% of ablation cells decided</strong>, the machine-checked lattice reveals the exact minimal sufficient set of checks for each security property. The lattice confirms that the layered defenses are not arbitrary: each check targets a distinct vulnerability path, or forms an either/or redundancy pair (such as PKCE or <code>state</code> for session integrity). Omission of any necessary check reliably yields an executable attack trace in the prover.</p>
-
-      <div class="diagram-card">
-        <div class="mermaid">
+        <div class="diagram-wrapper">
+          <pre class="mermaid">
 flowchart TD
-    classDef verified fill:#064e3b,stroke:#059669,stroke-width:2px,color:#a7f3d0;
-    classDef attack fill:#450a0a,stroke:#dc2626,stroke-width:2px,color:#fecaca;
-    classDef check fill:#1e1b4b,stroke:#4f46e5,stroke-width:2px,color:#c7d2fe;
-
     subgraph Hardened["Hardened Baseline (All Checks Active)"]
-        AllOn["All Defensive Checks ON"]:::check --> Proved["✅ All Security Lemmas Verified<br/>(Secrecy, Integrity, Intent, Revocation)"]:::verified
+        AllOn["All Defensive Checks ON"] --> Proved["All Security Lemmas Verified<br/>(Secrecy, Integrity, Intent, Revocation)"]
     end
 
     subgraph Lattice["Ablation Lattice (Individual Checks Removed)"]
         direction TB
-        F1["Remove Issuer Binding (NO_BINDING)"]:::check --> A1["❌ Attacker AS receives registered client credentials"]:::attack
-        F2["Remove Audience Check (NO_AUD)"]:::check --> A2["❌ Replay bearer token across unrelated MCP servers"]:::attack
-        F3["Remove Issuer Check (NO_ISS)"]:::check --> A3["❌ AS mix-up attack succeeds despite PKCE"]:::attack
-        F4["Remove Sender Constraint (cnf)"]:::check --> A4["❌ Replay leaked payment request with fresh payment ID"]:::attack
-        F5["Remove Online Revocation Check"]:::check --> A5["❌ Debits continue after user delinks the mandate"]:::attack
+        F1["Remove Issuer Binding (NO_BINDING)"] --> A1["Attacker AS receives registered client credentials"]
+        F2["Remove Audience Check (NO_AUD)"] --> A2["Replay bearer token across unrelated MCP servers"]
+        F3["Remove Issuer Check (NO_ISS)"] --> A3["AS mix-up attack succeeds despite PKCE"]
+        F4["Remove Sender Constraint (cnf)"] --> A4["Replay leaked payment request with fresh payment ID"]
+        F5["Remove Online Revocation Check"] --> A5["Debits continue after user delinks the mandate"]
     end
+          </pre>
+          <div class="diagram-caption">Figure 2: Structure of the ablation lattice showing the hardened baseline versus concrete counterexample traces generated when defenses are selectively disabled.</div>
         </div>
-        <div class="diagram-caption">Figure 2: Ablation Lattice Conceptualization — Disabling Individual Protocol Checks Produces Precise Attack Traces</div>
-      </div>
+      </section>
 
-      <h2>What it rediscovered</h2>
-      <p>When security checks are ablated in the models, the theorem prover does not construct purely abstract counterexamples. Instead, it systematically exercises the conditions of published, already-fixed vulnerabilities across official MCP SDKs:</p>
+      <section>
+        <h2>What it rediscovered</h2>
+        <p>When checks are ablated in the models, the attack traces found by Tamarin directly reproduce the conditions of published, already-fixed vulnerabilities across official MCP SDKs:</p>
 
-      <div class="table-container">
-        <table>
-          <thead>
-            <tr>
-              <th>Advisory / CVE</th>
-              <th>Protocol Clause</th>
-              <th>Model Flag</th>
-              <th>Real-World Consequence</th>
-              <th>Patch Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><strong>GHSA-qx49-fqc8-xw99</strong></td>
-              <td>RFC 8414 §3.3</td>
-              <td>Model 01 <code>NO_BINDING</code></td>
-              <td>Untrusted MCP server redirects client to attacker AS, leaking credentials</td>
-              <td><span class="badge-shipped">🟢 Shipped</span></td>
-            </tr>
-            <tr>
-              <td><strong>GHSA-w4fh-qvv9-3v23</strong></td>
-              <td>RFC 8707 §2</td>
-              <td>Model 02 <code>NO_AUD</code></td>
-              <td>Missing audience check allows replaying valid tokens across MCP servers</td>
-              <td><span class="badge-shipped">🟢 Shipped</span></td>
-            </tr>
-            <tr>
-              <td><strong>GHSA-rvq5-wwqv-78pq</strong></td>
-              <td>RFC 8707 §2</td>
-              <td>Model 02 <code>NO_AUD</code></td>
-              <td>Opt-in audience check defaults off in TypeScript SDK, exposing servers to replay</td>
-              <td><span class="badge-shipped">🟢 Shipped</span></td>
-            </tr>
-            <tr>
-              <td><strong>GHSA-6qxp-vccf-f47h</strong></td>
-              <td>MCP AS Binding</td>
-              <td>Model 01 / 03</td>
-              <td>Client credentials stored without issuer stamping cross AS boundaries</td>
-              <td><span class="badge-shipped">🟢 Shipped</span></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <p>None of these attack classes is new—each corresponds to an established vulnerability class or documented OAuth pitfall (such as AS mix-up despite PKCE under RFC 9207, or audience injection under RFC 7523). The value of this work is not finding new vulnerabilities, but providing a machine-checked verification map demonstrating that published fixes are formally sound and identifying where implementers risk regression.</p>
-
-      <h2>The India angle</h2>
-      <p>As AI agents begin executing economic transactions, authorization moves from accessing data to authorizing irrevocable fund transfers. In India, the Unified Payments Interface (UPI) ecosystem already incorporates delegated payments through NPCI's UPI Circle (circulars <code>OC 201</code> and <code>OC-201B</code>), allowing primary account holders to delegate payment authority to secondary users and software agents within predefined limits.</p>
-
-      <p>In Model 05 and our accompanying whitepaper (<a href="https://github.com/HarshThumar/mcp-auth-tamarin/blob/main/whitepaper/agent-payments-india.md">whitepaper/agent-payments-india.md</a>), we analyzed what an autonomous agent payment mandate must cryptographically bind:</p>
-
-      <div class="mandate-box">
-        <div class="mandate-header">
-          <span class="mandate-title">💳 Delegated Agent Payment Mandate</span>
-          <span style="font-size:0.75rem; color:var(--green); font-family:'JetBrains Mono',monospace;">SIGNED (Ed25519)</span>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Advisory / CVE</th>
+                <th>Protocol Clause</th>
+                <th>Model Flag</th>
+                <th>Real-World Consequence</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>GHSA-qx49-fqc8-xw99</strong></td>
+                <td>RFC 8414 §3.3</td>
+                <td>Model 01 <code>NO_BINDING</code></td>
+                <td>Untrusted MCP server redirects client to attacker AS, leaking credentials</td>
+                <td><span class="badge-shipped">Shipped</span></td>
+              </tr>
+              <tr>
+                <td><strong>GHSA-w4fh-qvv9-3v23</strong></td>
+                <td>RFC 8707 §2</td>
+                <td>Model 02 <code>NO_AUD</code></td>
+                <td>Missing audience check allows replaying valid tokens across MCP servers</td>
+                <td><span class="badge-shipped">Shipped</span></td>
+              </tr>
+              <tr>
+                <td><strong>GHSA-rvq5-wwqv-78pq</strong></td>
+                <td>RFC 8707 §2</td>
+                <td>Model 02 <code>NO_AUD</code></td>
+                <td>Opt-in audience check defaults off in TypeScript SDK, exposing servers to replay</td>
+                <td><span class="badge-shipped">Shipped</span></td>
+              </tr>
+              <tr>
+                <td><strong>GHSA-6qxp-vccf-f47h</strong></td>
+                <td>MCP AS Binding</td>
+                <td>Model 01 / 03</td>
+                <td>Client credentials stored without issuer stamping cross AS boundaries</td>
+                <td><span class="badge-shipped">Shipped</span></td>
+              </tr>
+            </tbody>
+          </table>
         </div>
-        <div class="mandate-grid">
-          <div class="m-item"><div class="m-label">Principal ID</div><div class="m-val">user@bank</div></div>
-          <div class="m-item"><div class="m-label">Authorized Payee</div><div class="m-val">merchant@upi</div></div>
-          <div class="m-item"><div class="m-label">Per-Txn Limit</div><div class="m-val">₹2,000</div></div>
-          <div class="m-item"><div class="m-label">Cumulative Cap</div><div class="m-val">₹10,000</div></div>
-          <div class="m-item"><div class="m-label">Target Audience</div><div class="m-val">payment-server.bank</div></div>
-          <div class="m-item"><div class="m-label">Agent Bound Key (cnf)</div><div class="m-val">ed25519-public-key</div></div>
-        </div>
-      </div>
 
-      <p>The ablation results for Model 05 establish that these six checks are mutually independent:</p>
-      <ul>
-        <li><strong>P10 (Money stays inside intent):</strong> Holds if and only if consent binding, payee validation, amount cap, and payment-server audience checks are all simultaneously enforced.</li>
-        <li><strong>P11 (No debit after cancellation):</strong> Holds if and only if the payment server performs a per-payment online revocation lookup. Cryptographic key-binding cannot compensate for an absent revocation check.</li>
-        <li><strong>P12 (Authentic agent requests):</strong> Holds if and only if the agent proves possession of its private key. A one-time payment ID cache alone fails against replay if requests lack sender-constraint.</li>
-      </ul>
+        <p>None of these attack mechanisms is new. Each corresponds to an established vulnerability class or documented OAuth pitfall (such as authorization server mix-up despite PKCE under RFC 9207, or audience injection under RFC 7523). The contribution is not claiming new vulnerabilities, but providing a machine-checked verification map demonstrating that published fixes are formally sound and identifying where implementers risk regression.</p>
+      </section>
 
-      <div class="callout callout-note">
-        <div class="callout-header">🇮🇳 Regulatory Alignment</div>
-        <p>We mapped these machine-checked findings to Indian policy and security frameworks, including the <strong>RBI FREE-AI Committee Report</strong> (Sutras on Trust and Resilience), <strong>CERT-In AI Security Guidelines</strong>, and the <strong>DPDP Act 2023</strong>. We couldn't find prior formal work on UPI-style agent mandates (the literature search is logged in the repository and the search is not exhaustive).</p>
-      </div>
+      <section>
+        <h2>The India angle</h2>
+        <p>As AI agents begin executing financial operations, authorization shifts from accessing data to authorizing irrevocable fund transfers. In India, the Unified Payments Interface (UPI) ecosystem already incorporates delegated payments through NPCI's UPI Circle (circulars OC 201 and OC-201B), allowing primary account holders to delegate payment authority to secondary users and software agents within predefined limits.</p>
+        <p>In Model 05 and our accompanying whitepaper (<a href="https://github.com/HarshThumar/mcp-auth-tamarin/blob/main/whitepaper/agent-payments-india.md"><code>whitepaper/agent-payments-india.md</code></a>), we analyzed what an autonomous agent payment mandate must cryptographically bind:</p>
+        <ol>
+          <li>The principal's approved payee</li>
+          <li>Explicit per-transaction and cumulative amount caps</li>
+          <li>A single target payment server (audience restriction)</li>
+          <li>A cryptographic key bound to the agent (proof of possession / DPoP)</li>
+          <li>An active online revocation check</li>
+        </ol>
 
-      <h2>Reproduce it</h2>
-      <p>Every lemma proof, model variant, and ablation result is fully reproducible. The entire environment is packaged into a self-contained Docker image:</p>
+        <p>The ablation results for Model 05 show that these controls are strictly independent:</p>
+        <ul>
+          <li><strong>P10 (Debit within intent):</strong> Holds if and only if consent binding, payee validation, amount cap, and payment-server audience checks are all simultaneously enforced.</li>
+          <li><strong>P11 (No debit after cancellation):</strong> Holds if and only if the payment server performs a per-payment online revocation lookup. Cryptographic key-binding cannot compensate for an absent revocation check.</li>
+          <li><strong>P12 (Authentic agent requests):</strong> Holds if and only if the agent proves possession of its private key. A one-time payment ID cache alone fails against replay if requests lack sender-constraint.</li>
+        </ul>
+        <p>We mapped these machine-checked findings to Indian policy and security frameworks, including the RBI FREE-AI Committee Report (addressing recommendations on Trust, Accountability, and Resilience), CERT-In AI Security Guidelines, and the DPDP Act 2023. We couldn't find prior formal work on UPI-style agent mandates (the literature search is logged in the repository and the search is not exhaustive).</p>
+      </section>
 
-      <pre><code class="language-bash">docker build -t mcp-auth-tamarin .
+      <section>
+        <h2>Reproduce it</h2>
+        <p>Every lemma proof, model variant, and ablation result is fully reproducible via Docker without installing Tamarin or Maude locally:</p>
+        <pre><code>docker build -t mcp-auth-tamarin .
 docker run --rm mcp-auth-tamarin ./scripts/reproduce.sh</code></pre>
+        <p>The script executes the full verification suite, checks all 376 lemma expectations, and outputs runtime benchmarks confirming that all properties verify or fail as specified.</p>
+      </section>
 
-      <p>The script executes the complete suite, verifies all 376 lemma expectations, and outputs runtime benchmarks confirming that all properties verify or fail as specified.</p>
+      <section>
+        <h2>What's next / caveats</h2>
+        <p>This repository provides the baseline for ongoing academic paper preparation. While symbolic verification provides mathematical certainty within the model's defined boundaries, real-world deployments carry limits that any formal abstraction simplifies:</p>
+        <ul>
+          <li><strong>Model abstraction boundaries:</strong> Tamarin's symbolic model abstracts away physical time and floating-point arithmetic (for instance, the UPI model partitions transaction limits into discrete classes rather than currency arithmetic). Browser-level implementation quirks and side channels fall outside the symbolic model.</li>
+          <li><strong>Literature scope:</strong> While our survey spans major security venues (S&P, CCS, USENIX Security, CSF, NDSS), the search is not exhaustive.</li>
+          <li><strong>Implementation verification:</strong> We maintain a formal-to-implementation matrix in <code>docs/implementation-check.md</code> comparing model lemmas against real SDK execution. Where client-side findings are under active coordinated disclosure with maintainers, details are withheld in triage.</li>
+        </ul>
+        <p>Formal verification provides protocol designers and SDK maintainers with machine-checked confidence before specifications and implementations freeze. As agentic protocols expand, formal models provide an essential tool for ensuring that delegated authority remains strictly bounded.</p>
+      </section>
 
-      <h2>What's next / caveats</h2>
-      <p>This repository provides the foundation for ongoing academic paper preparation. While symbolic verification provides mathematical certainty within defined boundaries, real-world deployments carry inherent limits:</p>
-
-      <ul>
-        <li><strong>Model abstraction boundaries:</strong> Tamarin abstracts physical time and floating-point arithmetic (for example, the UPI model partitions transaction limits into discrete classes rather than currency arithmetic). Browser internals and side channels fall outside the symbolic model.</li>
-        <li><strong>Literature scope:</strong> While our survey spans major security venues (S&P, CCS, USENIX Security, CSF, NDSS), the search is not exhaustive.</li>
-        <li><strong>Implementation verification:</strong> We maintain a formal-to-implementation matrix in <a href="https://github.com/HarshThumar/mcp-auth-tamarin/blob/main/docs/implementation-check.md">docs/implementation-check.md</a> comparing model lemmas against real SDK execution. Where client-side findings are under active coordinated disclosure with maintainers, details are withheld in triage.</li>
-      </ul>
-
-      <div class="callout callout-tip">
-        <div class="callout-header">💡 Looking Forward</div>
-        <p>Formal verification provides protocol designers with machine-checked confidence before specifications and implementations freeze. As agentic protocols expand, formal models provide an essential tool for ensuring that delegated authority remains strictly bounded.</p>
+      <div class="discussion-card">
+        <h3>Discussion</h3>
+        <p>If you are building or integrating MCP clients, servers, or agent delegation systems: which assumptions in your authorization flow have been hardest to validate, and where do you observe the greatest divergence between OAuth specifications and actual SDK behavior?</p>
       </div>
 
-      <div style="margin: 40px 0; padding: 24px; border-radius: 14px; background: rgba(79, 156, 249, 0.05); border: 1px dashed rgba(79, 156, 249, 0.3);">
-        <p style="font-weight: 600; color: #fff; margin-bottom: 6px;">💬 Question for readers and protocol builders:</p>
-        <p style="margin: 0; color: var(--muted); font-size: 0.95rem;">If you are building or integrating MCP clients, servers, or agent delegation systems: which assumptions in your authorization flow have been hardest to validate, and where do you observe the greatest divergence between OAuth specifications and actual SDK behavior?</p>
-      </div>
+      <section>
+        <h2>Links</h2>
+        <ul>
+          <li><a href="https://github.com/HarshThumar/mcp-auth-tamarin">Repository Root</a></li>
+          <li><a href="https://github.com/HarshThumar/mcp-auth-tamarin/blob/main/docs/results.md">Results Write-Up (R0–R16)</a></li>
+          <li><a href="https://github.com/HarshThumar/mcp-auth-tamarin/blob/main/docs/ablation.md">Ablation Lattice</a></li>
+          <li><a href="https://github.com/HarshThumar/mcp-auth-tamarin/blob/main/docs/case-study-upi.md">UPI Agent Payments Case Study</a></li>
+          <li><a href="https://github.com/HarshThumar/mcp-auth-tamarin/blob/main/whitepaper/agent-payments-india.md">India Agent Payments Whitepaper</a></li>
+          <li><a href="https://github.com/HarshThumar/mcp-auth-tamarin/blob/main/docs/implementation-check.md">Formal Model to SDK Implementation Check</a></li>
+          <li><a href="https://github.com/HarshThumar/mcp-auth-tamarin/blob/main/docs/conformance-test-draft.md">Upstream Conformance Test Proposals (Issue #78)</a></li>
+        </ul>
+      </section>
     </article>
 
-    <footer class="post-footer">
-      <h3 style="font-size: 1.1rem; font-weight: 700; color: #fff; margin-bottom: 8px;">Explore Project Resources</h3>
-      <p style="font-size: 0.85rem; color: var(--muted);">All research artifacts, proofs, and documentation are public and MIT-licensed.</p>
-
-      <div class="links-grid">
-        <a href="https://github.com/HarshThumar/mcp-auth-tamarin" class="resource-card" target="_blank" rel="noopener">
-          <span class="res-title">📦 GitHub Repository</span>
-          <span class="res-desc">Tamarin models, CI proof runners, and Docker reproduction</span>
-        </a>
-        <a href="https://github.com/HarshThumar/mcp-auth-tamarin/blob/main/docs/results.md" class="resource-card" target="_blank" rel="noopener">
-          <span class="res-title">📊 Results Write-Up</span>
-          <span class="res-desc">Formal verification findings R0 through R16</span>
-        </a>
-        <a href="https://github.com/HarshThumar/mcp-auth-tamarin/blob/main/docs/ablation.md" class="resource-card" target="_blank" rel="noopener">
-          <span class="res-title">🔬 Ablation Lattice</span>
-          <span class="res-desc">Complete minimal-sufficient check combinations</span>
-        </a>
-        <a href="https://github.com/HarshThumar/mcp-auth-tamarin/blob/main/docs/case-study-upi.md" class="resource-card" target="_blank" rel="noopener">
-          <span class="res-title">🇮🇳 UPI Case Study</span>
-          <span class="res-desc">Delegated AI agent payment mandate models</span>
-        </a>
-        <a href="https://github.com/HarshThumar/mcp-auth-tamarin/blob/main/whitepaper/agent-payments-india.md" class="resource-card" target="_blank" rel="noopener">
-          <span class="res-title">📑 India Whitepaper</span>
-          <span class="res-desc">Regulatory mapping to RBI, CERT-In, and DPDP</span>
-        </a>
-        <a href="https://github.com/HarshThumar/mcp-auth-tamarin/blob/main/docs/implementation-check.md" class="resource-card" target="_blank" rel="noopener">
-          <span class="res-title">🔍 Implementation Check</span>
-          <span class="res-desc">Model vs real SDK execution verification matrix</span>
-        </a>
-      </div>
+    <footer>
+      <span>Published under MIT License</span>
+      <span>IETF 127 Hackathon Project &middot; Formal Verification of MCP Authorization</span>
     </footer>
   </main>
 
-  <script>
-    // Initialize Mermaid
-    mermaid.initialize({
-      startOnLoad: true,
-      theme: 'dark',
-      themeVariables: {
-        darkMode: true,
-        background: '#080d1a',
-        primaryColor: '#1e1b4b',
-        primaryTextColor: '#f8fafc',
-        primaryBorderColor: '#4f46e5',
-        lineColor: '#60a5fa',
-        secondaryColor: '#064e3b',
-        tertiaryColor: '#450a0a'
-      }
-    });
-
-    // Reading Progress Bar
-    window.addEventListener('scroll', () => {
-      const docHeight = document.documentElement.scrollHeight - window.innerHeight;
-      const scrolled = (window.scrollY / docHeight) * 100;
-      document.getElementById('progress').style.width = scrolled + '%';
-    });
-  </script>
 </body>
 </html>
