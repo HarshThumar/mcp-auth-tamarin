@@ -39,6 +39,7 @@
 - Cremers, Dehnel-Wild: Component-based analysis of 5G-AKA (NDSS 2019, ablation-style neighbour): https://www.ndss-symposium.org/ndss-paper/component-based-formal-analysis-of-5g-aka-channel-assumptions-and-session-confusion/
 - Tudorache et al.: executable taxonomy of properties for ProVerif/Tamarin: https://arxiv.org/abs/2605.29465
 - Chalmers master's thesis on mAuth (Tamarin, OAuth-based; lemmas not read): https://odr.chalmers.se/bitstreams/6a478ad7-2825-4b5f-8044-92d7760287eb/download
+- Kumar, Kishore, Lu, Prakash: "Security Analysis of Unified Payments Interface and Payment Apps in India" (USENIX Security 2020): https://www.usenix.org/conference/usenixsecurity20/presentation/kumar
 - Malladi: Towards Formal Modeling and Analysis of UPI Protocols (2021): https://archive.cps-vo.org/node/82178
 - Related-work review with all claims and the search log: [related-work.md](related-work.md)
 - ProVerif analysis of attenuation chains (not MCP or RFC 8693): https://datatracker.ietf.org/doc/draft-davliatshin-oauth-attenuation-chains-report/

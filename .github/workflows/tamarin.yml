@@ -23,6 +23,15 @@ env:
   MAUDE_VERSION: "3.5.1"
 
 jobs:
+  docker-build:
+    name: Docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build .
+
   prove:
     runs-on: ubuntu-latest
     timeout-minutes: 150
