@@ -130,6 +130,37 @@ def run(job):
 def finish(key, ctx, removed, name, text, secs):
     props = MODELS[key]["props"]
     status = parse(text, props)
+    # W2: for model 03 ATTACK_LEMMAS cells the run above used the REDUCED model
+    # (attacker clients dropped). Re-prove P2 on the FULL model (-D=FULL_MODEL
+    # re-includes them) so the cell is decided for the full model, not reduced.
+    full_model_p2 = False
+    rem = set(removed)
+    if key == "03" and ("NO_META_CHECK" in rem
+                        or {"RT_UNBOUND", "AS_NO_ASSERTION_AUD"} <= rem):
+        fpath = os.path.join(OUT, name + ".fullp2.txt")
+        ftext = None
+        if os.path.exists(fpath):
+            with open(fpath, encoding="utf-8", errors="replace") as fh:
+                ftext = fh.read()
+            if "summary of summaries" not in ftext and "ABLATE_TIMEOUT" not in ftext:
+                ftext = None
+        if ftext is None:
+            fargs = ["timeout", "-s", "KILL", str(TIMEOUT), "tamarin-prover",
+                     "--prove=rs_accepts_only_consented", "--derivcheck-timeout=0",
+                     MODELS[key]["file"], "-D=FULL_MODEL"] + \
+                    [f"-D={f}" for f in (*ctx, *removed)]
+            fp = subprocess.run(fargs, cwd=ROOT, capture_output=True,
+                                text=True, errors="replace")
+            ftext = fp.stdout + fp.stderr
+            if fp.returncode in (124, 137):
+                ftext += f"\nABLATE_TIMEOUT after {TIMEOUT}s\n"
+            with open(fpath, "w", encoding="utf-8") as fh:
+                fh.write(ftext)
+        fstat = parse(ftext, ["rs_accepts_only_consented"])
+        v = fstat.get("rs_accepts_only_consented", "?")
+        if v in ("V", "F"):
+            status["rs_accepts_only_consented"] = v
+            full_model_p2 = True
     timeout = "ABLATE_TIMEOUT" in text
     if timeout:
         status = {k: ("T" if v == "?" else v) for k, v in status.items()}
@@ -138,7 +169,8 @@ def finish(key, ctx, removed, name, text, secs):
         secs = int(mt.group(1)) if mt else -1
     warn = bool(re.search(r"WARNING:.*wellformedness", text))
     rec = dict(model=key, context=list(ctx), removed=list(removed), name=name,
-               seconds=secs, timeout=timeout, wellformedness_warning=warn, status=status)
+               seconds=secs, timeout=timeout, wellformedness_warning=warn,
+               full_model_p2=full_model_p2, status=status)
     print(f"{name:60s} {secs:>6}s {' '.join(f'{k}={v}' for k, v in status.items())}", flush=True)
     return rec
 

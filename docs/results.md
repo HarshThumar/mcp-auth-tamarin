@@ -259,3 +259,14 @@ The variant table shows which checks are needed for which client. For a **public
 - Models 02 and 03 need `[sources]` lemmas (`code_sources`, `token_sources`, `rt_sources`), plus tagged codes and tokens (`cd(...)`, `at(...)`, `rt(...)`). Without them Tamarin loops on "attacker injects a value into the client → client leaks it to a dishonest AS → attacker knows it".
 - The tags have public destructors (`uncd`, `unat`, `unrt`), and client assertions are checked with `verify` rather than by pattern-matching on the signing key. As a result every model passes all well-formedness checks, including the full message-derivation check. `scripts/prove.sh` runs with `--derivcheck-timeout=0` and fails on any warning.
 - Lemma counts: `scripts/prove.sh` prints how many checked results are security properties and how many are helper or sanity lemmas (`[sources]`, `executable*`, `client_key_secret`, `code_single_use`). Quote the security-property number, not the total.
+
+### R8b — P2 holds on the full model for the CIMD attack-lemma cells (W2)
+
+The ablation cells that state the P3/P4 secrecy attacks as exists-trace lemmas run a reduced
+model with the attacker's own clients left out, so their all-traces P2 proof was previously
+counted as undecided (✅ʳ). Re-proving P2 `rs_accepts_only_consented` on the full model (the
+`FULL_MODEL` flag re-includes the attacker clients) verifies in every such cell. So P2 does
+not depend on the metadata/iss/refresh-binding/assertion-audience checks for model 03: an RS
+accepts a token only for a consented (user, client, RS) regardless. The secrecy results
+(P3/P4) are unchanged.
+

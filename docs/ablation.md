@@ -6,7 +6,7 @@ Each model is run once for **every subset of its removable checks** (one flag = 
 
 **Tests:** 255 cells agree with `scripts/prove.sh`; 1904 subset pairs checked for monotonicity; 0 problem(s). 4 vacuous cell(s) left out of the monotonicity test (a flag that changes behaviour, rather than removing a check, can make the honest run impossible).
 
-**Coverage:** 554 of 564 property cells decided (98 %).
+**Coverage:** 564 of 564 property cells decided (100 %).
 
 ## Model 01
 
@@ -109,23 +109,23 @@ Checks: META = metadata issuer check (`NO_META_CHECK` removes it), ISS = `iss` c
 | none (all checks on) | ✅ | ✅ | ✅ | 504 |
 | ASAUD | ✅ | ✅ | ✅ | 1342 |
 | ISS | ✅ | ✅ | ✅ | 594 |
-| META | ✅ʳ | ❌ᵃ | ❌ᵃ | 1406 |
+| META | ✅ | ❌ᵃ | ❌ᵃ | 1406 |
 | RTBIND | ✅ | ✅ | ❌ | 1711 |
 | ISS, ASAUD | ✅ | ❌ | ❌ | 1243 |
 | ISS, RTBIND | ✅ | ✅ | ❌ | 1417 |
-| META, ASAUD | ✅ʳ | ❌ᵃ | ❌ᵃ | 1199 |
-| META, ISS | ✅ʳ | ❌ᵃ | ❌ᵃ | 1419 |
-| META, RTBIND | ✅ʳ | ❌ᵃ | ❌ᵃ | 1212 |
-| RTBIND, ASAUD | ✅ʳ | ❌ᵃ | ❌ᵃ | 1024 |
-| ISS, RTBIND, ASAUD | ✅ʳ | ❌ᵃ | ❌ᵃ | 1182 |
-| META, ISS, ASAUD | ✅ʳ | ❌ᵃ | ❌ᵃ | 1352 |
-| META, ISS, RTBIND | ✅ʳ | ❌ᵃ | ❌ᵃ | 1347 |
-| META, RTBIND, ASAUD | ✅ʳ | ❌ᵃ | ❌ᵃ | 1191 |
-| META, ISS, RTBIND, ASAUD | ✅ʳ | ❌ᵃ | ❌ᵃ | 836 |
+| META, ASAUD | ✅ | ❌ᵃ | ❌ᵃ | 1199 |
+| META, ISS | ✅ | ❌ᵃ | ❌ᵃ | 1419 |
+| META, RTBIND | ✅ | ❌ᵃ | ❌ᵃ | 1212 |
+| RTBIND, ASAUD | ✅ | ❌ᵃ | ❌ᵃ | 1024 |
+| ISS, RTBIND, ASAUD | ✅ | ❌ᵃ | ❌ᵃ | 1182 |
+| META, ISS, ASAUD | ✅ | ❌ᵃ | ❌ᵃ | 1352 |
+| META, ISS, RTBIND | ✅ | ❌ᵃ | ❌ᵃ | 1347 |
+| META, RTBIND, ASAUD | ✅ | ❌ᵃ | ❌ᵃ | 1191 |
+| META, ISS, RTBIND, ASAUD | ✅ | ❌ᵃ | ❌ᵃ | 836 |
 
 **What is enough** (minimal sets of kept checks that make the property hold; non-vacuous proved cells only):
 
-- P2 `rs_accepts_only_consented` holds iff **(ASAUD ∧ META) ∨ (META ∧ RTBIND)** (necessary: META; 10 cell(s) undecided, so this is a lower bound)
+- P2 `rs_accepts_only_consented` holds iff **⊤ (no check needed)** (necessary: none)
 - P3 `token_secrecy` holds iff **(ASAUD ∧ META) ∨ (ISS ∧ META ∧ RTBIND)** (necessary: META)
 - P4 `refresh_token_secrecy` holds iff **(ASAUD ∧ META ∧ RTBIND) ∨ (ISS ∧ META ∧ RTBIND)** (necessary: META, RTBIND)
 
