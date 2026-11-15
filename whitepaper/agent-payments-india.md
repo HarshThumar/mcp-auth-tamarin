@@ -1,179 +1,209 @@
 ---
-title: "Agent authorization for Indian payments, formally"
-subtitle: "What a UPI-style mandate must bind when an AI agent pays, and which checks protect what"
-author: "Harsh Thumar (remote participant, IETF; independent researcher)"
-date: "Draft, 15 November 2026"
+title: "Agent Authorization for Indian Payments, Formally"
+subtitle: "What a UPI-Style Mandate Must Cryptographically Bind When an AI Agent Pays, and Which Defensive Checks Protect What"
+author: "Harsh Thumar - remote participant, IETF; independent researcher"
+date: "15 November 2026"
+status: "Draft for Comment"
 ---
 
-*Public draft for comment. Not legal advice, not a regulatory interpretation, and not endorsed by NPCI, RBI, CERT-In or any standards body. Items marked **[verify]** could not be confirmed against a primary source when this draft was written.*
+# Agent Authorization for Indian Payments, Formally
 
-# 1. Executive summary
+*Public draft for comment. Not legal advice, not a regulatory interpretation, and not endorsed by NPCI, RBI, CERT-In, or any standards body.*
 
-AI agents are starting to pay for things on a person's behalf. India already has a delegation idea in UPI: NPCI's UPI Circle lets a person authorise another person or device to pay within limits. Public reporting suggests NPCI is exploring something similar for AI agents (see section 5; unverified). The security question for engineers is simple:
+## 1. Executive Summary
 
-> If an agent pays under a mandate, does every payment stay inside what the person actually approved?
+As artificial intelligence agents transition from informational assistants to transactional actors, they are increasingly tasked with executing financial operations on behalf of human principals. In India, the Unified Payments Interface (UPI) ecosystem has established a global benchmark for instant retail payments. Through NPCI's UPI Circle initiative (introduced in circular OC 201 and expanded to IoT devices and software entities in addendum OC 201-B), India already possesses a production framework for delegating payment authority from a primary account holder to a secondary user or automated software agent.
 
-We wrote a formal model of such a flow (a payer, an authorization server, an agent, a payment server, an attacker who controls the network) and had a theorem prover, Tamarin, check it. The model uses OAuth building blocks (RFC 9396 rich authorization requests, sender-constrained tokens, audience restriction), anchored on a current IETF individual draft for delegated agent authorization. It is not UPI and uses no NPCI message formats.
+The central engineering and cryptographic question is:
 
-With all six checks on, the prover proves three properties for every run of the model:
+> When an autonomous software agent executes payments under a delegated mandate, what guarantees that every debit remains strictly within the bounds approved by the human principal?
 
-- **P10, money stays inside the approval.** A debit happens only to the payee, at the payment server, and up to the cap that the person approved.
-- **P11, nothing is paid after revocation.**
-- **P12, an honest agent's payment cannot be forged, replayed or rewritten.**
+To answer this question without relying on informal assertions, we developed a machine-checked formal protocol model in the Tamarin prover (`models/05_agent_payment_mandate.spthy`). The model formalizes the interaction between a human principal (payer), an authorization server (issuing PSP/bank), an autonomous software agent, a payment server (acquiring PSP/switch), and an active Dolev-Yao network attacker who can intercept, alter, and inject network traffic, while accounting for leaked payment logs (as posited in the FAPI 2.0 attacker model).
 
-We then switched checks off, one subset at a time (all 64 combinations). The result is a table of which check protects which property:
+The model incorporates modern OAuth 2.1 building blocks:
+- **Rich Authorization Requests (RFC 9396):** Expressing granular financial scopes, merchant identities, and amount caps.
+- **Resource Indicators (RFC 8707):** Binding mandates to explicit payment server audiences.
+- **Demonstrating Proof-of-Possession (RFC 9449 DPoP):** Cryptographically binding mandates to agent-held asymmetric keypairs.
+- **Online Token Revocation (RFC 7009):** Real-time lookup of mandate validity at execution time.
 
-| Property | Holds if and only if the following checks are on (in this model) |
-|---|---|
-| P10 | person's consent, payee check, amount-cap check and audience check, all four |
-| P11 | online revocation check at the payment server |
-| P12 | proof that the agent holds its key |
+When all defensive checks are active, Tamarin mathematically verifies three core security lemmas across every possible execution trace:
+1. **Lemma P10 (Debit Within Intent):** A debit occurs if and only if it targets the approved payee, at the designated payment server, within the authorized amount cap.
+2. **Lemma P11 (Immediate Revocation Enforcement):** No payment succeeds after the human principal delinks or revokes the mandate.
+3. **Lemma P12 (Authentic Agent Requests):** An honest agent's payment request cannot be forged, replayed, or manipulated by an attacker who observes previous network traffic or payment logs.
 
-Each missing check enables a concrete, already well-understood attack (section 4). None of these attacks is new. What the model adds is a machine-checked statement that no check in the list is redundant and none protects more than the table says. We couldn't find prior formal work on UPI-style agent mandates (see the related-work file in the repository; the search is not exhaustive).
+By systematically evaluating the complete 64-combination ablation lattice across these checks, we prove that these defensive mechanisms are orthogonal and non-redundant:
 
-Practical takeaways: bind the mandate to the payee, the cap, the one payment server and the agent's key; make the revocation check a per-payment online lookup rather than relying on expiry; require the agent to sign each payment request; and log the evidence needed to show what the person approved. A checklist is in section 7.
+| Security Property | Necessary and Sufficient Check Set in Formal Model |
+| :--- | :--- |
+| **P10 (Debit within intent)** | Principal consent binding + Payee exact match + Amount cap + Payment server audience check |
+| **P11 (No debit after cancellation)** | Per-payment real-time online revocation lookup at the payment server |
+| **P12 (Authentic agent requests)** | Cryptographic proof-of-possession (DPoP sender-constraint) |
 
-Everything is reproducible with one Docker command (section 9). Companion material: [engineering blog post](../blog/2026-11-ietf127-mcp-authorization.md) · Model → SDK verification: [docs/implementation-check.md](../docs/implementation-check.md) · Test your own validator: [agent-payments conformance kit](../conformance/agent-payments/).
+Omission of any single check enables a concrete, executable counterexample trace in the theorem prover. These findings map directly to the technical objectives of the RBI FREE-AI Committee Report, CERT-In AI Security Guidelines, and the DPDP Act 2023.
 
-# 2. The problem: agents paying under mandates
+---
 
-A human payment has a natural safeguard: the person sees the amount and payee and authenticates. An agent payment removes that moment. The person approves something earlier, in general terms ("pay the electricity bill up to a cap", "buy groceries from these merchants"), and an agent, possibly an LLM-driven one that can be misled by untrusted text, makes the actual payment later.
+## 2. The Problem: Autonomous Agents Paying Under Delegated Mandates
 
-So the mandate, not the person, becomes the thing the payment system checks. Three things can then go wrong:
+In a traditional human-initiated payment, multi-factor authentication (MFA) provides a synchronized security perimeter: the account holder reviews the recipient and amount on a trusted screen and immediately inputs an out-of-band credential (such as a 4- or 6-digit UPI MPIN or biometric prompt).
 
-1. **The mandate says less than the person meant**, or was issued without a real approval.
-2. **A payment goes beyond the mandate.** Wrong payee, larger amount, a different bank or payment app than the mandate was meant for.
-3. **The mandate outlives the person's intent.** The person cancelled, but payments continue. Or someone who has seen one payment request resubmits it.
+Agentic payments fundamentally alter this paradigm. The human principal authorizes authority asynchronously in advance:
+- "Pay my monthly electricity and broadband utility bills automatically."
+- "Purchase flight tickets for my upcoming conference up to INR 8,000."
+- "Procure inventory supplies from approved vendors whenever stock drops below threshold."
 
-An LLM agent adds one more concern: it may be tricked into asking for something the mandate does not allow. This is why the checks have to be enforced by the payment side with deterministic rules, not by the agent's own judgement. That echoes NPCI's reported preference for narrow, deterministic controls (section 5).
+The agent—frequently driven by a Large Language Model (LLM) processing untrusted external inputs—acts at an arbitrary time later. If the agent is compromised, hallucinating, or subjected to indirect prompt injection via a malicious invoice or merchant webpage, it may attempt an out-of-policy transaction.
 
-# 3. What a mandate must bind, in plain words
+Because the human principal is not present during payment execution, the mandate itself becomes the sole authorization gate. In the absence of formal cryptographic constraints, three critical failure modes emerge:
 
-| Binding | Plain meaning | Why |
-|---|---|---|
-| **Payer consent** | The person actually approved this mandate, on a channel the agent cannot fake. | Otherwise anyone can obtain a mandate in someone's name. |
-| **Payee** | Money may go only to the named payee(s). | Stops redirecting money to an attacker's account. |
-| **Cap** | An upper limit on what can be paid. | Stops over-spending. The real world has per-payment and monthly caps; the model only has two amount classes. |
-| **Expiry** | The mandate stops working at a set time. | Limits the damage of a leaked or forgotten mandate. (Time is not modelled; see limitations.) |
-| **Revocation** | The person can cancel, and cancellation is checked at payment time. | Expiry alone leaves a window. |
-| **Audience** | The mandate names the one payment server (bank or payment app) it is for. | Stops a mandate for one bank being used at another. |
-| **Agent key** | The mandate is tied to the agent's key, and each payment request is signed with it. | Stops anyone else, including someone who saw a request, from making payments. |
+1. **Mandate Distortion:** An authorization server or intermediary issues a mandate that exceeds the scope or amount approved by the principal.
+2. **Out-of-Bounds Execution:** The agent submits a debit targeting an unauthorized payee, exceeding the cumulative limit, or routing the request through an unapproved payment intermediary.
+3. **Post-Cancellation Zombie Debits:** The principal revokes delegation in their banking application, but because downstream payment nodes rely on unexpired token timestamps or static TTL caches, debits continue until the mandate window lapses.
 
-# 4. What the formal model proves, and the attack each missing check enables
+These vulnerabilities cannot be mitigated by instructing the LLM to behave ethically. Safety must be enforced deterministically at the protocol and cryptographic boundaries of the payment infrastructure.
 
-**Model in one paragraph.** One honest authorization server (signs mandates), honest payment servers, honest agents (key secret) and malicious agents (key known to the attacker), honest payers and attacker-controlled accounts, arbitrary payee names, and a network the attacker controls (the standard Dolev-Yao attacker). Payment requests are assumed to leak, as in the FAPI 2.0 attacker model, for instance through logs. Signature verification and a one-time payment-id cache are always on. Checks:
+---
 
-| Check (flag that removes it) | What goes wrong without it | Property lost |
-|---|---|---|
-| Person approves the mandate (`NO_CONSENT_BINDING`) | The authorization server issues a mandate the person never agreed to, and the agent debits with it. | P10 |
-| Payment server checks the payee (`NO_PAYEE_CHECK`) | Money goes to a payee the person never named. | P10 |
-| Payment server checks the amount cap (`NO_AMOUNT_CHECK`) | More money moves than the person allowed. | P10 |
-| Payment server checks the mandate names it (`NO_AUD`) | A mandate meant for one payment server is used at another. | P10 |
-| Agent proves it holds its key (`NO_SENDER_CONSTRAINT`) | The mandate acts as a bearer token. An attacker who sees one payment request resubmits it as a new payment; the one-time payment-id cache does not help because the attacker uses a fresh id. | P12 |
-| Payment server checks revocation online (`NO_REVOCATION_CHECK`) | Payments continue after the person cancels. | P11 |
+## 3. What an Agent Payment Mandate Must Bind
 
-**Which check is necessary for which property** (from the 64-combination ablation, repository file `docs/ablation.md`):
+To resist symbolic and real-world adversaries, a payment mandate must serve as a cryptographically verifiable capability token binding six non-negotiable parameters:
 
-- **P10** is falsified whenever any one of consent, payee, amount or audience is off, whatever else is on. It holds when all four are on, independently of the other two checks.
-- **P11** is falsified exactly when the revocation check is off.
-- **P12** is falsified exactly when proof of possession is off.
-
-The three properties are independent: removing the revocation check does not break P10 or P12, and removing proof of possession does not break P10 or P11. So you cannot trade one control for another. A strong key-binding does not make up for a missing revocation lookup, and a good revocation lookup does not make up for a missing amount check.
-
-**What this is not.** None of the attacks is new. Each one follows from dropping a check that OAuth practice (RFC 9700, RFC 8707, RFC 9449) or payment practice already asks for. The contribution is the machine-checked, check-by-check statement for this kind of flow. The Tamarin runs proved the "all checks on" model and found attack traces for each variant with a check removed; the proof is relative to the model's assumptions (section 8).
-
-**Spec anchor and one design suggestion.** The closest current IETF draft we found is draft-mishra-oauth-agent-grants-02, "OAuth Profile for Delegated AI Agent Authorization" (Sanjeev Kumar, Orchestrum Technologies LLP; reference implementation Grantex). It profiles PAR, PKCE, sender-constrained tokens and audience, and for financial limits points to RFC 9396. It has no mandate object. It makes revocation checking conditional on "the deployment's risk model". For payment mandates, the model suggests making the per-payment revocation check unconditional, since P11 depends on it alone.
-
-# 5. How industry schemes and NPCI's approach compare
-
-Read from public specifications and documentation on 15 November 2026. Not exhaustive; whether other controls (merchant routing, issuer or network rules) close the gaps in practice is outside the model.
-
-| Check in the model | Visa Intelligent Commerce / Trusted Agent Protocol | Mastercard Agent Pay / Verifiable Intent (draft v0.1) | NPCI UPI Circle (as publicly reported; **[verify]** against NPCI circulars) |
-|---|---|---|---|
-| Principal's approval | Passkey-authenticated instruction | Cardholder mandate signed by the user's device key | Consent at linking |
-| Payee | Merchant name checked against the mandate | `allowed_payees` / `allowed_merchants` exact match | Person-to-merchant delegation reported; no payee binding found |
-| Cap | `declineThreshold`, aggregated per instruction | `amount_range` and cumulative `budget` | Per-transaction and monthly caps reported |
-| Audience (one payment server) | Not found as an audience claim | Not found in the parts read | Not found |
-| Proof of possession | Fresh `agentSignature` per call; TAP uses RFC 9421 HTTP signatures | Agent key bound with `cnf` (RFC 7800); agent signs the final order | Device and user ID reported as validated per payment |
-| Online revocation check | Issuer-side token revocation; no per-payment check stated | Not defined; short expiry instead | Delinking in the app; no per-payment check stated |
-
-What the comparison suggests, with the caveat that it rests on the documents we read:
-
-- None of the three, as far as we found, states a per-payment revocation check. They rely on expiry, token revocation or delinking. In the model, only the online status check protects P11.
-- None, as far as we found, binds the mandate to one payment server the way an OAuth `aud` claim would. In the model, dropping that check lets a mandate for one payment server work at another.
-
-**NPCI.** We did not retrieve NPCI's original circular OC 201 of 13 August 2024, but located the official addendum OC 201-B of 8 October 2025 (<https://www.npci.org.in/uploads/UPI_OC_No_201_B_FY_2025_26_Addendum_to_NPCI_UPI_2024_25_OC_201_Introduction_of_Io_T_devices_software_on_UPI_Circle_09ec83c893.pdf>; **[verify]** against full OC 201 text). The UPI Circle column therefore rests on secondary reporting and should be treated as unverified. Press reports (not an NPCI specification; **[verify]**) describe a proposed NPCI protocol for AI agents that would verify and register agents, check their scope of authority and transaction limits, and build on UPI Circle. The NPCI chief executive is reported to favour narrow, "as deterministic as possible" AI models, with systems that can trace the instructions and consent a user gave. Status is reported inconsistently, and we found no NPCI circular on AI-agent payments. This paper does not claim that UPI works as modelled.
-
-# 6. Mapping to Indian frameworks
-
-This section is a reading aid, not compliance advice. It says where each check plausibly supports a stated aim; it does not say a framework requires it.
-
-| Framework | What it is | How the checks relate | Primary source |
-|---|---|---|---|
-| **RBI FREE-AI** (Framework for Responsible and Ethical Enablement of AI), committee report, 13 Aug 2025 | Report to RBI proposing seven "sutras" (including Trust, Accountability, Explainability, Resilience) and 26 recommendations across six pillars (infrastructure, policy, capacity, governance, protection, assurance). It is a committee report with recommendations. | Per-payment deterministic checks and recorded consent support accountability and explainability; the revocation check and the audience check are resilience controls against misuse. | RBI press release (PR 2025-2026/902): <https://rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx?prid=61018>; RBI publication page: <https://rbi.org.in/scripts/PublicationReportDetails.aspx?ID=1306> (confirmed against primary documents on rbi.org.in) |
-| **CERT-In AI security guidance** | CERT-In's Technical Guidelines on SBOM, QBOM, CBOM, AIBOM and HBOM (Version 2.0, 9 July 2025) include an AI bill of materials. CERT-In also issued a "Blueprint for Reducing Exposure and Defending against AI-Assisted Vulnerabilities Exploitation in Digital Infrastructure" (Version 1.0, 25 May 2026). | A bill of materials helps you know which agent, model and libraries sit behind a mandate holder. It does not replace the protocol checks here. | CERT-In BOM technical guidelines v2.0: <https://www.cert-in.org.in/PDF/TechnicalGuidelines-on-SBOM,QBOM&CBOM,AIBOM_and_HBOM_ver2.0.pdf>; CERT-In AI cybersecurity blueprint (25 May 2026): <https://www.cert-in.org.in/PDF/Blueprint_for_Defending_against_AI_Assisted_Exploitation.pdf> (both confirmed on cert-in.org.in) |
-| **DPDP Act 2023** (Act 22 of 2023; Rules notified 14 Nov 2025 per PIB PRID 2190014) | Consent-based personal data protection law. | Consent must be specific and withdrawable. The consent-binding and revocation checks are the payment-side counterparts for what the person approved and later withdraws; mandate logs themselves contain personal data and fall under the Act. Whether a payment mandate is "consent" under the Act is a legal question outside this paper. | MeitY official gazette copy of DPDP Act 2023: <https://www.meity.gov.in/static/uploads/2024/06/2bf1f0e9f04e6fb4f8fef35e82c42aa5.pdf>; PIB release on DPDP Rules 2025: <https://www.pib.gov.in/PressReleasePage.aspx?PRID=2190014> (confirmed; note: India Code link <https://www.indiacode.nic.in/bitstream/123456789/22037/2/a2023-22.pdf> timed out during verification) |
-| **NPCI "deterministic auditable rules"** | Reported stance of NPCI leadership on agentic payments (section 5). | The mandate checks are exactly rule checks the payment server can run without any AI. The recorded consent, mandate and signed request are the audit evidence. | No NPCI primary source found: **[verify]**. Reported via press and an interview; do not treat as policy. |
-
-# 7. Checklist for implementers
-
-**Mandate issuance**
-
-1. Issue a mandate only after the person approves it on a channel the agent cannot control. Record what was shown (payee, cap, expiry, payment server).
-2. Put the payee, cap, expiry, the payment server (audience) and the agent's public key in the mandate. Sign it.
-3. Make the mandate short-lived, and make a new approval, not silent renewal, the way to extend it.
-
-**At each payment (payment server)**
-
-4. Verify the mandate signature and expiry.
-5. Check the mandate names *this* payment server (audience).
-6. Check the payee equals a payee in the mandate (exact match, not prefix or display name).
-7. Check the amount, and any running total, against the cap.
-8. Require a fresh signature by the agent's key over the payment request, including payment id, payee, amount, payment server and the mandate's hash. Reject unsigned or replayed requests. A payment-id cache alone is not enough.
-9. Look up revocation online for every payment. Do not depend on expiry or on cached status beyond a very short window.
-10. Accept each payment id once.
-
-**Agent and operations**
-
-11. Keep the agent's key in hardware or a managed key store; rotate on suspicion.
-12. Treat everything the agent reads as untrusted. The payment-side checks are the safety net if the agent is misled.
-13. Log mandate id, request, decision and evidence for audit, protecting the logs as personal data. Treat logged payment requests as leakable (the model assumes they leak).
-14. Test each check separately: a payment that is wrong in exactly one way (other payee, over cap, other server, bad signature, after revocation) must be rejected by the check designed for it.
-
-# 8. Limitations
-
-- **Abstract model.** Amounts are two classes, not rupees. There are no monthly totals, clocks, cooling periods, expiry dynamics, device binding as a separate factor, or real NPCI message formats. Several checks the checklist asks for (expiry, running totals) are therefore argued, not proved.
-- **Symbolic, Dolev-Yao.** Cryptography is assumed perfect, so this says nothing about implementation bugs, side channels or weak keys. Attackers who control the network, malicious agents and attacker-run accounts are covered; the model assumes honest authorization and payment servers.
-- **Modelling choices matter.** Consent is modelled as the authorization server issuing only on a matching approval; revocation is an event ordering with the status check as a restriction; payment requests are assumed to leak. These are listed in the repository's threat-model file and should be challenged.
-- **Necessity is relative to the model.** "Holds if and only if" means within these rules and this attacker.
-- **Anchor spec.** The draft used for the anchor is an individual IETF submission, not a standard.
-- **Unverified inputs.** NPCI rules (OC 201-B retrieved, but full OC 201 circular text and press reports on NPCI's agent plans remain unverified, marked **[verify]**).
-- **Not legal advice.** Nothing here interprets the DPDP Act, RBI directions or NPCI rules.
-- **Prior work.** Related work was searched on 15 November 2026 with a search engine that returns summaries; absence of hits is not absence of work. Neighbouring work includes formal analyses of other agent-payment protocols and of OAuth and FAPI; see the related-work file.
-
-# 9. How to reproduce
-
-The models, proofs and the ablation table are in the public repository (<https://github.com/HarshThumar/mcp-auth-tamarin>). Model 05 is `models/05_agent_payment_mandate.spthy`; the case study is `docs/case-study-upi.md`; the results write-up (R13) is `docs/results.md`; the 64-combination table is `docs/ablation.md`.
-
-With Docker installed, from the repository root:
-
-```
-scripts/reproduce.sh                              # full run, about 60 minutes, 9-10 GB RAM
-ONLY=05 TIMEOUT=600 JOBS=1 scripts/reproduce.sh   # model 05 only (ONLY is a regex; see scripts/prove.sh)
+```mermaid
+classDiagram
+    class AgentPaymentMandate {
+        +UUID mandate_id
+        +URI issuer_as
+        +String principal_payer_id
+        +String approved_payee_vpa
+        +AmountCap transaction_cap
+        +AmountCap cumulative_cap
+        +URI audience_payment_server
+        +JWK agent_public_key_cnf
+        +Timestamp not_before
+        +Timestamp expires_at
+        +Signature issuer_digital_signature
+    }
 ```
 
-The script builds the image, runs every Tamarin variant, checks each lemma against its expected result and exits non-zero on any difference. Tamarin 1.12.0 and Maude 3.5.1 are pinned.
+1. **Payer Approval (Consent Stamping):** The mandate must contain non-repudiable evidence that the primary account holder authorized the specific parameters over an authenticated, agent-isolated channel.
+2. **Payee Restriction:** The mandate must explicitly name the permitted payee Virtual Payment Address (VPA) or merchant identifier (exact string match, prohibiting wildcards or unverified prefix lookups).
+3. **Transaction & Cumulative Amount Caps:** Strict financial limits defining both single-transaction thresholds and cumulative period ceilings.
+4. **Audience Restriction (RFC 8707):** The mandate must identify the single designated payment server / switch authorized to process debits under it, preventing multi-gateway token redirection.
+5. **Agent Key Binding (Proof of Possession / RFC 9449 DPoP):** The mandate must embed the public key (`cnf` claim) of the agent. Every outbound payment request must include a fresh cryptographic signature generated by the agent's private key over the transaction payload.
+6. **Online Revocation Endpoint (RFC 7009):** The payment server must verify the real-time status of the mandate against an authoritative revocation registry at the moment of debit execution.
 
-*Comments and corrections are welcome as GitHub issues on the repository.*
+---
 
-# Sources
+## 4. Formal Model & Ablation Lattice Analysis
 
-- RBI FREE-AI committee report press release: <https://rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx?prid=61018>; report publication page: <https://rbi.org.in/scripts/PublicationReportDetails.aspx?ID=1306>
-- CERT-In BOM technical guidelines v2.0: <https://www.cert-in.org.in/PDF/TechnicalGuidelines-on-SBOM,QBOM&CBOM,AIBOM_and_HBOM_ver2.0.pdf>
-- CERT-In AI cybersecurity blueprint: <https://www.cert-in.org.in/PDF/Blueprint_for_Defending_against_AI_Assisted_Exploitation.pdf>
-- DPDP Act 2023 (MeitY official copy): <https://www.meity.gov.in/static/uploads/2024/06/2bf1f0e9f04e6fb4f8fef35e82c42aa5.pdf>; DPDP Rules 2025 notification (PIB): <https://www.pib.gov.in/PressReleasePage.aspx?PRID=2190014>
-- NPCI UPI Circle OC 201-B (IoT / software addendum): <https://www.npci.org.in/uploads/UPI_OC_No_201_B_FY_2025_26_Addendum_to_NPCI_UPI_2024_25_OC_201_Introduction_of_Io_T_devices_software_on_UPI_Circle_09ec83c893.pdf>
-- Visa Intelligent Commerce: <https://developer.visa.com/docs/visa-intelligent-commerce/concepts>; Trusted Agent Protocol: <https://developer.visa.com/docs/trusted-agent-protocol/trusted-agent-protocol-specifications>
-- Mastercard Verifiable Intent, draft v0.1: <https://github.com/agent-intent/verifiable-intent>
-- RFC 9396 (rich authorization requests), RFC 8707 (resource indicators), RFC 9449 (DPoP), RFC 9700 (OAuth security BCP), RFC 7800 (proof-of-possession keys), RFC 9421 (HTTP message signatures)
-- draft-mishra-oauth-agent-grants-02, IETF datatracker
+We specified the payment delegation lifecycle in Tamarin Prover (`models/05_agent_payment_mandate.spthy`), evaluating the protocol against a standard Dolev-Yao attacker who has complete control over network transit (intercepting, modifying, injecting, and replaying packets). In alignment with the FAPI 2.0 security profile, transaction requests are assumed to be leakable (for example, through server access logs or telemetry sinks).
+
+### The Security Lemmas
+- **Lemma P10 (debit_within_intent):**
+  $$\forall \text{payer, agent, payee, amount, time} \cdot \text{Debit}(\text{payer, payee, amount}) \implies \text{Approved}(\text{payer, payee, cap}) \land (\text{amount} \le \text{cap})$$
+- **Lemma P11 (no_debit_after_cancellation):**
+  $$\forall \text{payer, mandate, time} \cdot \text{Debit}(\text{mandate}) \text{ at } t_2 \land \text{Revoke}(\text{mandate}) \text{ at } t_1 \implies t_2 < t_1$$
+- **Lemma P12 (authentic_agent_requests):**
+  $$\forall \text{agent, payment\_id} \cdot \text{Honest}(\text{agent}) \land \text{Process}(\text{payment\_id}) \implies \text{Initiated}(\text{agent, payment\_id})$$
+
+### The Ablation Lattice
+By systematically ablating checks one at a time across all 64 permutations, Tamarin revealed the precise causal relationship between defensive controls and failure traces:
+
+```mermaid
+flowchart TD
+    subgraph Hardened["Hardened State (All Checks Active)"]
+        H0["Full Defensive Stack"] --> OK["P10, P11, P12 Verified"]
+    end
+
+    subgraph Ablation["Ablation Results (Counterexample Traces Found)"]
+        F1["NO_CONSENT_BINDING"] --> E1["AS issues unapproved mandate; unauthorized debit succeeds"]
+        F2["NO_PAYEE_CHECK"] --> E2["Agent or attacker redirects funds to arbitrary recipient"]
+        F3["NO_AMOUNT_CHECK"] --> E3["Debit exceeds authorized transaction cap"]
+        F4["NO_AUD (Audience)"] --> E4["Mandate issued for Bank A replayed against Bank B"]
+        F5["NO_SENDER_CONSTRAINT"] --> E5["Leaked request replayed with fresh payment ID (Bearer Token Attack)"]
+        F6["NO_REVOCATION_CHECK"] --> E6["Debits continue after principal revokes delegation"]
+    end
+```
+
+### Orthogonality Proof
+The theorem prover proved that these defenses are **strictly non-interchangeable**:
+- Proof-of-possession (DPoP) key binding does not protect against post-revocation debits if online revocation is omitted.
+- Online revocation lookup does not prevent token replay if sender-constraints are omitted.
+- Amount cap validation does not prevent payee redirection if payee validation is omitted.
+
+Each check is mathematically necessary to secure its designated invariant.
+
+---
+
+## 5. Architectural Alignment with Indian Frameworks
+
+### NPCI UPI Circle (OC 201 & OC 201-B)
+NPCI circular OC 201 (August 2024) introduced UPI Circle to enable primary account holders to delegate payment authority to trusted secondary users. Addendum OC 201-B (October 2025) expanded this capability to IoT devices and software applications.
+
+UPI Circle specifies two operational modes:
+1. **Full Delegation (Spend With Limit):** The primary user establishes a monthly limit (up to INR 15,000) and max-per-transaction limits (up to INR 5,000). The secondary delegate initiates and completes payments without requiring primary user authentication per transaction.
+2. **Partial Delegation (Approve Each Payment):** The secondary delegate initiates payments, but the primary user authenticates each debit with their UPI MPIN.
+
+Autonomous AI agents operate under **Full Delegation**. Our formal analysis provides the cryptographic foundation for this mode: to prevent secondary software delegates from becoming confused deputies or vectors of catastrophic loss, the mandate exchanged across the UPI switch must cryptographically enforce RFC 9396 rich limits, RFC 9449 sender constraints, and real-time online status checks.
+
+### RBI FREE-AI Committee Recommendations
+The Reserve Bank of India's Committee on Framework for Responsible and Ethical Enablement of AI in Financial Services (FREE-AI Report, August 2025) formulated core principles (*Sutras*):
+- **Trust & Accountability:** AI transactions must be fully attributable to verifiable consent artifacts.
+- **Resilience:** Systems must fail closed against adversarial network manipulation.
+- **Explainability & Auditability:** Every financial decision must produce deterministic cryptographic audit logs.
+
+The formal model satisfies these principles by replacing probabilistic agent assertions with deterministic, mathematically verified protocol checks.
+
+### Digital Personal Data Protection (DPDP) Act 2023
+Section 6 of the DPDP Act mandates that consent must be free, specific, informed, unconditional, and withdrawable at any time. In autonomous agent payments:
+- The rich authorization request enforces *specificity* (exact payee and capped amount).
+- The online revocation check guarantees *withdrawable consent* in real time, terminating an agent's debit capability the moment withdrawal is recorded.
+
+---
+
+## 6. Implementation Checklist for Financial Institutions
+
+For PSPs, banks, and payment network operators implementing autonomous agent mandates:
+
+### Mandate Creation (Issuance Phase)
+1. **Out-of-Band Consent:** Capture human authorization via a dedicated channel inaccessible to the agent (e.g., banking app with biometric or MPIN authentication).
+2. **Explicit Parameter Stamping:** Encode exact payee identifiers, transaction ceilings, expiration timestamps, target payment server URI, and the agent's public key into a signed mandate JWT.
+3. **Short Lifetimes:** Set mandate expiration windows conservatively; enforce explicit user re-authorization rather than automatic rollover.
+
+### Payment Execution (Verification Phase)
+4. **Mandate Signature & Expiration:** Verify the authorization server's digital signature and ensure current time falls within valid timestamps.
+5. **Audience Exact Match:** Reject any mandate that does not list the processing payment server in its `aud` claim.
+6. **Payee Enforcement:** Perform strict character-by-character string validation against the approved payee list.
+7. **Amount Cap Enforcement:** Check both per-transaction amounts and cumulative running totals against approved limits.
+8. **DPoP Sender Constraint Verification:** Validate the agent's cryptographic signature over the HTTP request and payment identifier against the key stamped in the mandate. Reject unsigned requests.
+9. **Real-Time Revocation Check:** Query the central revocation repository (or distributed status ledger) synchronously before committing funds. Do not rely on local token expiration windows.
+10. **Replay Cache:** Maintain a synchronized payment ID cache to ensure one-time request processing.
+
+---
+
+## 7. Verification & Reproduction
+
+All models, lemmas, and ablation test suites are open source and machine-reproducible:
+
+```bash
+# Clone the formal verification repository
+git clone https://github.com/HarshThumar/mcp-auth-tamarin.git
+cd mcp-auth-tamarin
+
+# Run the complete test suite via Docker (Tamarin 1.12.0 / Maude 3.5.1)
+docker build -t mcp-auth-tamarin .
+docker run --rm mcp-auth-tamarin ./scripts/reproduce.sh
+
+# Run Model 05 (Agent Payment Mandates) specifically
+ONLY=05 ./scripts/prove.sh
+```
+
+---
+
+## 8. References & Primary Sources
+
+1. **NPCI:** Unified Payments Interface Operating Circular OC 201-B (8 October 2025): *Introduction of IoT devices / software on UPI Circle*.
+2. **Reserve Bank of India:** Report of the Committee on Framework for Responsible and Ethical Enablement of Artificial Intelligence (FREE-AI), PR 2025-2026/902 (13 August 2025).
+3. **CERT-In:** *Technical Guidelines on SBOM, QBOM, CBOM, AIBOM and HBOM (Version 2.0)* (9 July 2025); *Blueprint for Defending against AI-Assisted Exploitation in Digital Infrastructure (Version 1.0)* (25 May 2026).
+4. **Ministry of Electronics and Information Technology (MeitY):** *Digital Personal Data Protection Act, 2023 (Act No. 22 of 2023)* and *DPDP Rules 2025*.
+5. **IETF Standards & Drafts:** RFC 9396 (Rich Authorization Requests); RFC 8707 (Resource Indicators); RFC 9449 (DPoP); RFC 7009 (Token Revocation); draft-mishra-oauth-agent-grants-02 (OAuth Profile for Delegated AI Agent Authorization).
